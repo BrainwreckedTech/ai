@@ -1,0 +1,45 @@
+cnsledit	Console Editors		nano				on	Easier editor
+cnsledit	Console Editors		nano-syntax-highlighting	on	Syntax highlighting for nano
+cnsledit	Console Editors		vim				on	For vimdiff and pacdiff
+pkghlprs	Pacman Helpers		lostfiles			on	Find orphan files not owned by any package
+pkghlprs	Pacman Helpers		pacman-contrib			on	Scripts and tools for pacman
+pkghlprs	Pacman Helpers		pacutils			on	Helper tools for libalpm
+pkghlprs	Pacman Helpers		pkgfile				on	Find packages via .files metadata
+pkghlprs	Pacman Helpers		reflector			on	Pacman mirrorlist filter tool
+exsystem	Extra System Packages	cronie				off	Cron daemon
+exsystem	Extra System Packages	plocate				on	Faster locate
+exsystem	Extra System Packages	openssh				on	OpenSSH client and server
+exsystem	Extra System Packages	polkit				on	Privilege toolkit
+exsystem	Extra System Packages	sudo				on	Allow users to run commands as root
+compress	Compression Utilities	arj				off	Lesser-known ARJ compression
+compress	Compression Utilities	lhasa				off	LZH/LHA compression (Japan, Doom, Quake)
+compress	Compression Utilities	lrzip				on	Long Range ZIP based on LZMA, LZO, bzip2, and ZPAQ
+compress	Compression Utilities	lz4				on	Extremely fast compression algorithm
+compress	Compression Utilities	lzop				on	Compression focused on decompress speed
+compress	Compression Utilities	p7zip				on	Compression based on LZMA, PPMd, and bzip22
+compress	Compression Utilities	unarj				off	Lesser-known ARJ compression
+compress	Compression Utilities	unrar				on	Infamous RAR format from RARLAB
+compress	Compression Utilities	unzip				on	Famous ZIP archive format from PKWARE
+compress	Compression Utilities	wimlib				off	Create, extract, and (un)compress WIM files
+compress	Compression Utilities	zip				on	Famous ZIP archive format from PKWARE
+compress	Compression Utilities	xz				on	LZMA-based compression adapted for UNIX
+compress	Compression Utilities	zstd				on	Zstandard fast compression (Facebook)
+diagnose	Console Diagnosis	atop				on	Interactive load monitor
+diagnose	Console Diagnosis	glances				on	Curses-based system monitor
+diagnose	Console Diagnosis	htop				on	Curses-based process viewer
+diagnose	Console Diagnosis	iftop				on	Monitors network bandwidth usage
+diagnose	Console Diagnosis	iotop				on	Monitors disk usage
+diagnose	Console Diagnosis	lsof				on	Lists open files
+diagnose	Console Diagnosis	nmon				on	Performance monitoring tool
+diagnose	Console Diagnosis	strace				on	Trace system calls and signals
+filemgmt	Console File Management	git				on	Distributed version control systems
+filemgmt	Console File Management	ncdu				on	Disk usage analyzer
+filemgmt	Console File Management	perl-rename			on	Rename files using perl regular expressions
+filemgmt	Console File Management	ranger				on	CLI file manager
+filemgmt	Console File Management	rsync				on	Synchronize remote or local directories
+filemgmt	Console File Management	tree				on	List directory contents in a tree format
+clibrwsr	Console Web Browsers	elinks				off	A feature-rich text-mode web browser
+clibrwsr	Console Web Browsers	lynx				off	A text-mode browser for the World Wide Web
+clibrwsr	Console Web Browsers	links				off	A text-mode web browser, similar to Lynx
+clibrwsr	Console Web Browsers	w3m				off	A text-mode web browser as well as pager
+END

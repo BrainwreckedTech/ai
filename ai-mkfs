@@ -1,0 +1,492 @@
+#!/usr/bin/env bash
+
+source ai-funcs
+
+################################################################################
+# Here are more global variables to share amongst functions
+################################################################################
+declare -r TITLEBAR="AI FORMATTER"
+declare -A PRT_SIZE PRT_TYPE PT_LABEL FS_LABEL FS_TYPE SUBVOLS
+declare PT_NAMES
+
+################################################################################
+# Overly-cautious verification of required binaries
+################################################################################
+
+for CMD in awk column find id lsblk mount partprobe \
+  printf rev rmdir sfdisk sort sudo tr umount; do
+    BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
+done
+
+################################################################################
+# Look for utilities that create file systems.
+# Individually, any missing programs here are not deal breakers.
+################################################################################
+
+for CMD in btrfs chattr; do
+  BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="WARN: Couldn't find ${CMD}\n"
+done
+
+declare -A MKFS
+
+MKFS[xfs]="$(GET_COMMAND mkfs.xfs)"          || ERR_LIST+="WARN: Couldn't find mkfs.xfs\n"
+MKFS[jfs]="$(GET_COMMAND jfs_mkfs mkfs.jfs)" || ERR_LIST+="WARN: Couldn't find jfs_mkfs\n"
+MKFS[swap]="$(GET_COMMAND mkswap)"           || ERR_LIST+="WARN: Couldn't find mkswap\n"
+MKFS[ext4]="$(GET_COMMAND mke2fs mkfs.ext4)"  || ERR_LIST+="WARN: Couldn't find mke2fs\n"
+MKFS[ntfs]="$(GET_COMMAND mkntfs mkfs.ntfs)" || ERR_LIST+="WARN: Couldn't find mkntfs\n"
+MKFS[f2fs]="$(GET_COMMAND mkfs.f2fs)"        || ERR_LIST+="WARN: Couldn't find mkfs.fsf2\n"
+MKFS[fat32]="$(GET_COMMAND mkfs.fat mkfs.vfat mkfs.msdos)" || ERR_LIST+="WARN: Couldn't find mkfs.fat\n"
+MKFS[zpool]="$(GET_COMMAND zpool)"           || ERR_LIST+="WARN: Couldn't find zpool."
+MKFS[btrfs]="$(GET_COMMAND mkfs.btrfs)"      || ERR_LIST+="WARN: Couldn't find mkfs.btrfs\n"
+
+################################################################################
+# Now we can do sanity checks
+################################################################################
+
+if [[ -z ${MKFS[btrfs]}${MKFS[ext4]}${MKFS[f2fs]}${MKFS[jfs]}${MKFS[xfs]} ]]; then
+  # Should be impossible, but IBMs exist ;)
+  ERR_LIST+="CRIT: Couldn't find any program to make a Linux root file system.\n"
+fi; if [[ ${SYSFRMWR} == uefi ]] && [[ -z ${MKFS[fat32]} ]]; then
+  ERR_LIST+="WARN: Couldn't find mkfs.fat for the UEFISP -- will not be able to use UEFI.\n"
+fi; if [[ -z ${MKFS[btrfs]}${MKFS[ext4]}${MKFS[fat32]}${MKFS[ntfs]}${MKFS[xfs]} ]]; then
+  # Should also be impossible, but it's not a deal breaker.
+  ERR_LIST+="WARN: Couldn't find any program to make an XBOOTLDR partition.\n"
+fi; if [[ -z ${MKFS[ntfs]} ]]; then
+  ERR_LIST+="WARN: Couldn't find mkntfs -- will not be able to format Windows partitions.\n"
+fi; if [[ -n ${MKFS[f2fs]} ]] && [[ -z ${BIN[chattr]} ]]; then
+  ERR_LIST+="WARN: Couldn't find chattr -- will not be able to set up compression on F2FS.\n"
+fi; if [[ -n ${MKFS[btrfs]} ]] && [[ -z ${BIN[btrfs]} ]]; then
+  ERR_LIST+="WARN: Couldn't find btrfs -- will not be able to set up subvolumes on BTRFS.\n"
+fi
+
+################################################################################
+# At this point, we can tell the user about all the fail points.
+################################################################################
+
+CHECK_FOR_FAILURE_POINTS
+
+################################################################################
+# Convenience functions
+################################################################################
+
+function GET_PARTITION_NAME {
+  local PART_ID="${1,,}"
+
+  "${BIN[grep]}" "${PART_ID}" <<< "$(GET_PARTITION_ID_LIST)" | \
+    "${BIN[awk]}" -F'\t' '{print $3}'
+}
+
+function TAB_PAD {
+  local STRING="${1}"
+  local SPACES="${2}"
+  
+  TABS=$(( ( SPACES - ${#STRING} + 7 ) / 8 ))
+  PADDING=$(printf '%0.s\t' $(seq 1 ${TABS}))
+  echo "${STRING}${PADDING}"
+}
+
+################################################################################
+# Important functions
+################################################################################
+
+function GENERATE_FSTAB {
+  local MNT_FSCK MNT_ROOT MNT_OPTS MNT_SVOL MNT_TRGT SUBVOL THISPART
+
+  for THISPART in ${PT_NAMES}; do
+    MNT_FSCK='2'
+    MNT_OPTS='noatime'
+
+    [[ rsvp,winrec,bsdzfs =~ ${PRT_TYPE["${THISPART}"]} ]] && continue
+    [[ ${PRT_TYPE["${THISPART}"]} =~ paging ]] && [[ ${PRT_TYPE[*]} =~ swap ]] && continue
+
+    case "${PRT_TYPE["${THISPART}"]}" in
+       efisp) MNT_TRGT='/efi';;
+       xbldr) MNT_TRGT='/boot';;
+       basic) MNT_TRGT='/mnt/win';;
+      paging) MNT_TRGT='/mnt/swap'; MNT_OPTS+=',umask=0177';;
+        swap) MNT_TRGT='none'; MNT_OPTS='defaults'; MNT_FSCK=0;;
+      rescue) MNT_TRGT='/mnt/rescue';;
+       linux) MNT_TRGT='/'; MNT_FSCK=1;;
+    esac
+
+    [[ ${FS_TYPE[${THISPART}]} == fat32 ]] && FS_TYPE[${THISPART}]='vfat'
+    [[ ${FS_TYPE[${THISPART}]} == btrfs ]] && MNT_OPTS+=',compress-force=zstd' && MNT_FSCK=0
+    [[ ${FS_TYPE[${THISPART}]} == f2fs ]] && MNT_OPTS+=',compress_algorith=zstd'
+
+    if [[ -n ${SUBVOLS["${THISPART}"]} ]]; then
+      MNT_ROOT=true
+      for SUBVOL in ${SUBVOLS["${THISPART}"]}; do
+        ${MNT_ROOT} && { MNT_SVOL="${MNT_TRGT}"; MNT_ROOT=false; } || MNT_SVOL="/mnt/${SUBVOL}"
+        [[ ${MNT_SVOL} == /mnt/home ]] && MNT_SVOL="/home"
+        "${BIN[printf]}" 'LABEL="%s"\t%s\t%s\t%s\t %1d %1d\n' "${PT_LABEL["${THISPART}"]}" "${MNT_SVOL}" "${FS_TYPE["${THISPART}"]}" "${MNT_OPTS},subvol=${SUBVOL}" 0 "${MNT_FSCK}" | "${BIN[sed]}" 's|//|/|g' >> /tmp/ph-fstab
+        [[ ${PRT_TYPE["${THISPART}"]} = xbldr ]] && break
+      done
+    else
+      "${BIN[printf]}" 'LABEL="%s"\t%s\t%s\t%s\t %1d %1d\n' "${PT_LABEL["${THISPART}"]}" "${MNT_TRGT}" "${FS_TYPE["${THISPART}"]}" "${MNT_OPTS}" 0 "${MNT_FSCK}" >> /tmp/ph-fstab
+    fi
+  done
+
+  "${BIN[sort]}" -k2 /tmp/ph-fstab | "${BIN[column]}" -o '	' -t | \
+    ${BIN[sed]} 's/\t\([0-2]$\)/ \1/g' > "${HOME}/ph-fstab"
+
+  rm /tmp/ph-fstab
+}
+
+function GENERATE_MKFS_COMMANDS {
+  local MNT_OPTS PTNUMBER THISPART SCRIPT SUBVOL
+
+  for THISPART in ${PT_NAMES}; do
+    [[ rsvp,extprt =~ ${PRT_TYPE["${THISPART}"]} ]] && continue
+
+    MNT_OPTS="noatime"
+
+    case "${FS_TYPE["${THISPART}"]}" in
+       ext4) SCRIPT+="${MKFS[ext4]} -t ext4 -L ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
+      fat32)
+          case "${PRT_TYPE["${THISPART}"]}" in
+            efisp) FS_LABEL["${THISPART}"]="EFI_SYSPART";;
+            xbldr) FS_LABEL["${THISPART}"]="XBOOTLOADER";;
+          esac
+          SCRIPT+="${MKFS[fat32]} -F 32 -n ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
+        jfs) SCRIPT+="${MKFS[jfs]} -qL ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
+       ntfs) SCRIPT+="${MKFS[ntfs]} -QL ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
+       swap) SCRIPT+="${MKFS[swap]} -L ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
+        xfs) SCRIPT+="${MKFS[xfs]} -m rmapbt=1 -m bigtime=1 -fL ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
+        zfs)
+          PTNUMBER=${THISPART#${DEV_NAME}}; PTNUMBER=${PTNUMBER#p}; PRT_TYPE["${THISPART}"]='bsdzfs'
+          SCRIPT+="${BIN[sfdisk]} --part-type /dev/${DEV_NAME} ${PTNUMBER} $(GET_PARTITION_ID 'bsdzfs' 'gpt')"$'\n'
+          SCRIPT+="${MKFS[zpool]} create -m none -o ashift=12 -O atime=off -O relatime=off -O acltype=posixacl -O canmount=off -O compression=zstd -O xattr=sa linux /dev/disk/by-partlabel/${PT_LABEL["${THISPART}"]}"$'\n';;
+       f2fs)
+          MNT_OPTS+=",compress_algorithm=zstd"
+          SCRIPT+="${MKFS[f2fs]} -fl ${FS_LABEL["${THISPART}"]} -O extra_attr,inode_checksum,sb_checksum,compression /dev/${THISPART}"$'\n'
+          SCRIPT+="${BIN[mount]} -o ${MNT_OPTS} -L ${FS_LABEL["${THISPART}"]} --target /mnt/phtm"$'\n'
+          SCRIPT+="${BIN[chattr]} -R +c /mnt/phtm"$'\n'
+          SCRIPT+="${BIN[umount]} /mnt/phtm"$'\n';;
+      btrfs)
+          MNT_OPTS+=",compress-force=zstd"
+          SCRIPT+="${MKFS[btrfs]} -fL ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n'
+          if [[ -n ${SUBVOLS["${THISPART}"]} ]]; then
+            SCRIPT+="${BIN[mount]} -o ${MNT_OPTS} -L ${FS_LABEL["${THISPART}"]} --target /mnt/phtm"$'\n'
+            for SUBVOL in ${SUBVOLS["${THISPART}"]}; do
+              SCRIPT+="${BIN[btrfs]} subvolume create /mnt/phtm/${SUBVOL}"$'\n'
+            done
+            SCRIPT+="${BIN[umount]} /mnt/phtm"$'\n'
+          fi
+    esac
+  done
+  echo "${SCRIPT}"
+}
+
+function GET_PARTITION_INFO {
+  local -i SECTSIZE="$(< "/sys/block/${DEV_NAME}/queue/hw_sector_size")"
+
+  PT_NAMES="$("${BIN[find]}" "/sys/block/${DEV_NAME}/" \( -name "${DEV_NAME}?" -o -name "${DEV_NAME}p?" \) | "${BIN[rev]}" | "${BIN[cut]}" -d/ -f1 | "${BIN[rev]}" | "${BIN[sort]}" | "${BIN[tr]}" '\n' ' ')"
+
+  for THISPART in ${PT_NAMES}; do
+    SECTORS="$(< "/sys/block/${DEV_NAME}/${THISPART}/size")"
+    PARTUUID="$("${BIN[lsblk]}" -lno PARTTYPE "/dev/${THISPART}")"
+    PRT_SIZE["${THISPART}"]="$(CONVERT_UNITS $((SECTORS*SECTSIZE/MEBIBYTE)) iec)"
+    PRT_TYPE["${THISPART}"]="$(GET_PARTITION_NAME "${PARTUUID}")"
+    PT_LABEL["${THISPART}"]="$("${BIN[lsblk]}" -lno PARTLABEL "/dev/${THISPART}")"
+    FS_LABEL["${THISPART}"]="${PT_LABEL["${THISPART}"]}"
+    case "${PRT_TYPE["${THISPART}"]}" in
+                    efisp) FS_TYPE["${THISPART}"]='fat32';;
+                     rsvp) FS_TYPE["${THISPART}"]='blank';;
+      basic|paging|winrec) FS_TYPE["${THISPART}"]='ntfs';;
+                     swap) FS_TYPE["${THISPART}"]='swap';;
+                    linux) FS_TYPE["${THISPART}"]='linux';;
+                   rescue) FS_TYPE["${THISPART}"]='rescue';;
+                    xbldr) FS_TYPE["${THISPART}"]='xbldr';;
+                     *zfs) FS_TYPE["${THISPART}"]='zfs';;
+    esac
+  done
+}
+
+function SUPPORTED_FILESYSTEMS {
+  local FSCHKLST="${1}" FSYSTEM SUPPORT
+
+  for FSYSTEM in ${FSCHKLST}; do
+    case "${FSYSTEM}" in
+      btrfs) [[ -n ${MKFS[btrfs]} ]] && SUPPORT+="btrfs B-Tree_File_System"$'\n';;
+       ext4) [[ -n ${MKFS[ext4]} ]] && SUPPORT+="ext4 4th_Extended_File_System"$'\n';;
+      fat32) [[ -n ${MKFS[fat32]} ]] && SUPPORT+="fat32 32-bit_File_Allocation_Table"$'\n';;
+       f2fs) [[ -n ${MKFS[f2fs]} ]] && SUPPORT+="f2fs Flash-Friendly_File_System"$'\n';;
+       ntfs) [[ -n ${MKFS[ntfs]} ]] && SUPPORT+="ntfs New_Technology_File_System"$'\n';;
+        jfs) [[ -n ${MKFS[jfs]} ]] && SUPPORT+="jfs Journaling_File_System"$'\n';;
+        xfs) [[ -n ${MKFS[xfs]} ]] && SUPPORT+="xfs X_File_System"$'\n';;
+        zfs) [[ -n ${MKFS[zpool]} ]] && SUPPORT+="zfs Z_File_System"$'\n';;
+    esac
+  done
+
+  echo "${SUPPORT}"
+}
+
+################################################################################
+# These functions handle user choices
+################################################################################
+declare DEV_NAME PARTNAME
+
+function CHANGE_UNITS {
+  case "${PHCONFIG[units]}" in
+     si) PHCONFIG[units]=iec;;
+    iec) PHCONFIG[units]=si;;
+  esac
+  return 0
+}
+
+function SELECT_DEVICE {
+  ##############################################################################
+  local BAKTITLE="Device Selection"
+  local HELP_MSG="Select the device to use:"
+  ##############################################################################
+  local -a TAG_VALS DESCRIPS
+
+  while read -r DEV_PATH DEV_DESC; do
+    TAG_VALS+=("${DEV_PATH}")
+    DESCRIPS+=("${DEV_DESC//_/ }")
+  done <<< "$("${BIN[lsblk]}" -no TYPE,PATH,SIZE,MODEL,SERIAL | "${BIN[grep]}" '^disk\|^loop' | "${BIN[cut]}" -d\  -f2- | \
+    "${BIN[sed]}" 's/ \+/ /g;s/ /_/g;s|\(/dev/[0-9a-z/]\+\)_|\1 |g')"
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "" \
+    "${HELP_MSG}" "TAG_VALS" "DESCRIPS" || return "${?}"
+
+  DEV_NAME="$(</tmp/selection)"
+  DEV_NAME="${DEV_NAME#\/dev\/}"
+}
+  
+function SELECT_PARTITION_SIMPLE {
+  ##############################################################################
+  local BAKTITLE="Partition Formatting"
+  local HELP_MSG=""
+  ##############################################################################
+  local -a TOFORMAT DESCRIBE
+  local -i SECTSIZE="$(< "/sys/block/${DEV_NAME}/queue/hw_sector_size")"
+
+  for THISPART in ${PT_NAMES}; do
+    if [[ linux,xbldr,rescue =~ ${FS_TYPE["${THISPART}"]} ]]; then
+      TOFORMAT+=("${THISPART}")
+      DESCRIBE+=("${PRT_SIZE["${THISPART}"]} ${PT_LABEL["${THISPART}"]}")
+    else
+      HELP_MSG+="${THISPART}: ${PRT_SIZE["${THISPART}"]} ${PT_LABEL["${THISPART}"]} to be formatted ${FS_TYPE["${THISPART}"]}\n"
+    fi
+  done
+
+  [[ ${#TOFORMAT[@]} -eq 0 ]] && return 99
+  HELP_MSG+="\nChoose partition to format:"
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "" \
+    "${HELP_MSG}" "TOFORMAT" "DESCRIBE" || return "${?}"
+
+  PARTNAME="$(< /tmp/selection)"
+}
+
+function SELECT_PARTITION_ADVANCED {
+  ##############################################################################
+  local BAKTITLE="Partition Formatting"
+  local HELP_MSG="PARTITION --SIZE-- PT LABEL FS LABEL TYPE:"
+  ##############################################################################
+  local -a MENUTAGS MENUOPTS
+
+  while true; do
+    unset MENUTAGS MENUOPTS
+    for THISPART in ${PT_NAMES}; do
+      MENUTAGS+=("${THISPART}")
+      MENUOPTS+=("$(TAB_PAD "${PRT_SIZE["${THISPART}"]}" 8)$(TAB_PAD "${PT_LABEL["${THISPART}"]}" 24)$(TAB_PAD "${FS_LABEL["${THISPART}"]}" 24)${FS_TYPE["${THISPART}"]}")
+    done
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "" \
+      "${HELP_MSG}" "MENUTAGS" "MENUOPTS" || return "${?}"
+    PARTNAME="$(< /tmp/selection)"
+  done
+}
+
+function SELECT_FORMAT_SIMPLE {
+  local -a TAG_VALS DESCRIPS
+  local -i DLG_HIGH=0 DLG_WIDE=0 LST_HIGH=0
+  local FDEFAULT FS_VALID 
+  
+
+  case "${PRT_TYPE["${PARTNAME}"]}" in
+    linux)
+      FS_VALID='btrfs ext4 f2fs jfs xfs zfs'
+      FDEFAULT='btrfs'; WARN="ROOT (/)"; DLG_HIGH=13; DLG_WIDE=48;;
+    rescue)
+      FS_VALID='btrfs ext4 f2fs jfs xfs'
+      FDEFAULT='btrfs'; WARN="ROOT (/)"; DLG_HIGH=13; DLG_WIDE=48;;
+    xbldr)
+      FS_VALID='btrfs ext4 f2fs fat32 jfs ntfs xfs'
+      HELP_MSG+="\n\n• GRUB2 supports all.\n"
+      HELP_MSG+="• rEFInd supports btrfs, ext4, fat32, and hfs\n"
+      HELP_MSG+="• systemd-boot supports fat32 (PC) or hfs (Mac)\n"
+      HELP_MSG+="• sylinux does not support access to outside partitions."
+      FDEFAULT='fat32'; WARN="/boot"; DLG_HIGH=19 && DLG_WIDE=62;;
+  esac
+
+  unset TAG_VALS DESCRIPS
+  while read -r FS_NAME FS_DESC; do
+    TAG_VALS+=( "${FS_NAME}" )
+    DESCRIPS+=( "${FS_DESC//_/ }" )
+  done <<< "$(SUPPORTED_FILESYSTEMS "${FS_VALID}")"
+  ###########################################################################
+  local BAKTITLE="File System Selection"
+  local HELP_MSG="Select the file system for ${PT_LABEL["${PARTNAME}"]}"
+  ###########################################################################
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" "showtags" "${FDEFAULT}" \
+    "${HELP_MSG}" "TAG_VALS" "DESCRIPS" || return "${?}"
+
+  FS_TYPE[${PARTNAME}]="$(</tmp/selection)"
+
+  if [[ ${FS_TYPE[${PARTNAME}]} == btrfs ]]; then
+    ######################################################################
+    BAKTITLE="BTRFS Subvolumes"
+    HELP_MSG="If you''d like to use subvolumes for ${PT_LABEL["${PARTNAME}"]}, "
+    HELP_MSG+="enter a space-separated list here:\n\n"
+    HELP_MSG+="NOTE: THE FIRST SUBVOLUME WILL BE ${WARN}"
+    ######################################################################
+    DLG_HIGH=10 && DLG_WIDE="$(($(tput cols)*75/100))"
+    DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
+      "${DLG_HIGH}" "${DLG_WIDE}" "${SUBVOLS[${PARTNAME}]}" || return "${?}"
+      SUBVOLS[${PARTNAME}]="$(</tmp/selection)"
+  else
+    return 0
+  fi
+}
+
+################################################################################
+# This carries out all selections
+################################################################################
+
+function FINALIZE {
+  local REQMOUNT=false
+  ##############################################################################
+  BAKTITLE="Verify partition setup for ${DEV_NAME}"
+  HELP_MSG='Does this look good to you?\n\n'
+  ##############################################################################
+
+  for THISPART in ${PT_NAMES}; do
+    HELP_MSG+="${THISPART}: ${PRT_SIZE["${THISPART}"]} ${PT_LABEL["${THISPART}"]} to be formatted ${FS_TYPE["${THISPART}"]}\n"
+  done
+
+  DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" || return 1
+
+  ##############################################################################
+  BAKTITLE="Progress"
+  HELP_MSG="Command output of partitioning and formatting:"
+  ##############################################################################
+  case "${BIN[dialog]}" in
+    *Xdialog) DLG_HIGH=9; DLG_WIDE=72;;
+           *) DLG_HIGH=6; DLG_WIDE=72;;
+  esac
+
+  while read -r FSSCRIPT; do
+    [[ ${FSSCRIPT} =~ /mount ]] && ! ${REQMOUNT} && REQMOUNT=true && SCRIPT+=('mkdir /mnt/phtm')
+    SCRIPT+=("${FSSCRIPT}")
+  done <<< "$(GENERATE_MKFS_COMMANDS)"
+
+  ${REQMOUNT} && SCRIPT+=("${BIN[rmdir]} /mnt/phtm")
+
+  # `zpool create` & `mkfs.btrfs` do not notify the kernel of partition changes
+  # (though mounting a btrfs filesystem *does* cause the kernel to take notice)
+  SCRIPT+=("${BIN[partprobe]}")
+
+  WRKSTEPS="$((${#SCRIPT[@]}+1))"
+  SEP_LINE="$("${BIN[printf]}" '=%.0s' {1..72})"$'\n'
+
+  case "${BIN[dialog]}" in
+    *kdialog)
+      DBUS_REF=$("${BIN[dialog]}" --title "${TITLEBAR} -- ${BAKTITLE}" \
+        --geometry "${GUI_WIDE}x${GUI_HIGH}" --progressbar 'Starting...' "${WRKSTEPS}")
+      for (( WORKSTEP=1; WORKSTEP<WRKSTEPS; WORKSTEP++ )); do
+        qdbus "${DBUS_REF% *}" "${DBUS_REF#* }" setLabelText "${SCRIPT["$((WORKSTEP-1))"]%% <<<*}" > /dev/null
+        echo "${SEP_LINE}${SCRIPT["$((WORKSTEP-1))"]}"$'\n'"${SEP_LINE}" >> /tmp/ph-debug 
+        qdbus "${DBUS_REF% *}" "${DBUS_REF#* }" Set "" value "${WORKSTEP}" > /dev/null
+        eval "${BIN[sudo]} -A ${SCRIPT["$((WORKSTEP-1))"]} 2>&1" >> /tmp/ph-debug
+      done
+      qdbus "${DBUS_REF% *}" "${DBUS_REF#* }" close > /dev/null;;
+    *zenity)
+      for (( WORKSTEP=1; WORKSTEP<WRKSTEPS; WORKSTEP++ )); do
+        echo "$((WORKSTEP*100/WRKSTEPS))"
+        echo "# ${SCRIPT["$((WORKSTEP-1))"]%% <<<*}"
+        echo "${SEP_LINE}${SCRIPT["$((WORKSTEP-1))"]}"$'\n'"${SEP_LINE}" >> /tmp/ph-debug
+        eval "${BIN[sudo]} -A ${SCRIPT["$((WORKSTEP-1))"]} 2>&1" >> /tmp/ph-debug
+      done | "${BIN[dialog]}" --title "${TITLEBAR} -- ${BAKTITLE}" --progress text='Starting...' --height=128 --width="${GUI_WIDE}" --auto-close;;
+    *dialog)
+      if [[ ${BIN[dialog]} =~ /dialog ]]; then
+        exec 3>&1
+        until echo "${PASSWORD}" | sudo -S true > /dev/null 2>&1; do
+          PASSWORD=$("${BIN[dialog]}" --title "ROOT PRIVILEGE REQUIRED" \
+          --backtitle "PARITION HELPER" --no-cancel --insecure --passwordbox "sudo password:" 8 40 \
+          2>&1 1>&3)
+        done
+        unset PASSWORD
+        exec 3>&-
+        MAIN_TTL="${BAKTITLE}"; BACK_TTL="${TITLEBAR}"
+      else
+        MAIN_TTL="${TITLEBAR}"; BACK_TTL="${BAKTITLE}"
+      fi
+      for (( WORKSTEP=1; WORKSTEP<WRKSTEPS; WORKSTEP++ )); do
+        echo "$((WORKSTEP*100/WRKSTEPS))"
+        printf 'XXX\n%s\nXXX\n' "${SCRIPT["$((WORKSTEP-1))"]%% <<<*}"
+        echo "${SEP_LINE}${SCRIPT["$((WORKSTEP-1))"]}"$'\n'"${SEP_LINE}" >> /tmp/ph-debug
+        eval "${BIN[sudo]} -A ${SCRIPT["$((WORKSTEP-1))"]} 2>&1" >> /tmp/ph-debug
+      done | "${BIN[dialog]}" --title "${MAIN_TTL}" --backtitle "${BACK_TTL}" --guage '' "${DLG_HIGH}" "${DLG_WIDE}";;
+  esac
+
+  # Change permissions on the debug output so it can be deleted as a regular user
+  # later.  This is in case the user AFKs long enough to lose sudo authentication.
+  "${BIN[sudo]}" chown "$("${BIN[id]}" -un):$("${BIN[id]}" -gn)" /tmp/ph-debug
+
+  ##############################################################################
+  BAKTITLE="OPERATION COMPLETE!"
+  ##############################################################################
+  DLG_HIGH="$(($(tput lines)*75/100))" && DLG_WIDE="$(($(tput cols)*75/100))"
+  GUI_WIDE=704
+
+  DIALOG_TEXT "${TITLEBAR}" "${BAKTITLE}" /tmp/ph-debug "${DLG_HIGH}" "${DLG_WIDE}"
+  rm /tmp/ph-debug
+
+  ##############################################################################
+  BAKTITLE="FSTAB Generation"
+  HELP_MSG="An fstab for this disk has been saved in ${HOME}/ph-fstab"
+  ##############################################################################
+  GENERATE_FSTAB
+  DIALOG_MSGBOX "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" && \
+  DIALOG_TEXT "${TITLEBAR}" "${BAKTITLE}" "${HOME}/ph-fstab" "${DLG_HIGH}" "${DLG_WIDE}"
+
+  exit 0
+}
+
+################################################################################
+# When the user cancels or escapes, they end up here.
+################################################################################
+
+function ADVANCED_MODE {
+  [[ -z ${DEV_NAME} ]] && exit 1
+  true
+  while [[ ${?} -eq 0 ]]; do
+    SELECT_PARTITION_ADVANCED && SELECT_FORMAT_ADVANCED
+  done
+  [[ "${?}" -eq 99 ]] && FINALIZE
+}
+
+################################################################################
+# On initial run, the user ends up here where they're
+# run through each step one right after the other.
+################################################################################
+
+function WIZARD_MODE {
+  SELECT_DEVICE && \
+  GET_PARTITION_INFO && \
+  while [[ ${?} -eq 0 ]]; do
+    SELECT_PARTITION_SIMPLE && SELECT_FORMAT_SIMPLE
+  done
+  [[ "${?}" -eq 99 ]] && FINALIZE
+}
+
+################################################################################
+# TODO:  Allow the user to re-enter wizard mode.
+################################################################################
+
+while true; do
+  WIZARD_MODE || exit 1 
+done

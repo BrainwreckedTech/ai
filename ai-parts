@@ -1,0 +1,852 @@
+#!/usr/bin/env bash
+
+source ai-funcs
+
+declare -r TITLEBAR="AI PARTITIONS"
+declare -i DLG_HIGH DLG_WIDE LST_HIGH
+
+################################################################################
+# Overly-cautious verification of required binaries
+################################################################################
+
+for CMD in awk column id lsblk partprobe printf rmdir sfdisk sort sudo; do
+    BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
+done
+
+################################################################################
+# At this point, we can tell the user about all the fail points.
+################################################################################
+
+CHECK_FOR_FAILURE_POINTS
+
+################################################################################
+# Here are more global variables to share amongst functions
+################################################################################
+declare -A PHCONFIG  # Associative array that holds all configuration
+declare -r -A MINIMUMS=([win]="$((20*GIBIBYTE))" [lin]="$((6*GIBIBYTE))")
+
+PHCONFIG=(
+  [units]='si'
+  [dev-name]='' [dev-scts]='-1' [dev-size]='-1'
+  [boot-fw]="${SYSTEM[fw-type]}" [part-tbl]='mbr' [boot-os]='linux+windows'
+  [swap-cfg]='uni-swap' [swapsize]="${SYSTEM[ram-os]}"
+  [esp-size]='100' [xbl-size]='795'
+  [msr-size]='500' [wre-size]='512'
+  [lin-size]='-1'  [lre-size]='5120'
+  [split-os]='windows' [split-by]='gb' [split-mi]='-1'
+)
+
+[[ ${PHCONFIG[boot-fw]} == uefi ]] && PHCONFIG[part-tbl]='gpt'
+
+################################################################################
+# Important functions
+################################################################################
+
+function CALCULATE_OS_SPLIT {
+  local -i REMAINS LIN_SIZE WIN_SIZE
+  REMAINS="$(GET_REMAINS_FOR_OSES)"
+  if [[ ${PHCONFIG[split-os]} == windows ]]; then
+    WIN_SIZE="${PHCONFIG[split-mi]}"
+    LIN_SIZE="$((REMAINS-PHCONFIG[split-mi]))"
+  elif [[ ${PHCONFIG[split-os]} == linux ]]; then
+    LIN_SIZE="${PHCONFIG[split-mi]}"
+    WIN_SIZE="$((REMAINS-PHCONFIG[split-mi]))"
+  fi
+  echo "${WIN_SIZE}:${LIN_SIZE}"
+}
+
+function GET_PARTITION_COUNT {
+  local -i PRTCOUNT=0
+
+  if [[ ${PHCONFIG[part-tbl]} == uefi ]]; then
+    [[ ${PHCONFIG[esp-size]} -gt 0 ]] && ((PRTCOUNT++))
+    [[ ${PHCONFIG[xbl-size]} -gt 0 ]] && [[ ${PHCONFIG[boot-os]} =~ linux ]] && ((PRTCOUNT++))
+    [[ ${PHCONFIG[msr-size]} -gt 0 ]] && [[ ${PHCONFIG[boot-os]} =~ windows ]] && ((PRTCOUNT++))
+  fi
+
+  if [[ ${PHCONFIG[boot-os]} =~ windows ]]; then
+    ((PRTCOUNT++))
+    [[ ${PHCONFIG[wre-size]} -gt 0 ]] && ((PRTCOUNT++))
+  fi
+
+  if [[ ${PHCONFIG[boot-os]} =~ linux ]]; then
+    ((PRTCOUNT++))
+    [[ ${PHCONFIG[lre-size]} -gt 0 ]] && ((PRTCOUNT++))
+  fi
+
+  [[ ${PHCONFIG[swap-cfg]} != pagefile ]] && ((PRTCOUNT++))
+  [[ ${PHCONFIG[swap-cfg]} == sep-swap ]] && ((PRTCOUNT++))
+
+  echo "${PRTCOUNT}"
+}
+
+function GET_PARTITION_LAYOUT {
+  local PTLAYOUT=''
+  local OS_SPLIT LIN_SIZE WIN_SIZE
+
+  OS_SPLIT="$(CALCULATE_OS_SPLIT)"
+  WIN_SIZE="${OS_SPLIT%:*}"
+  LIN_SIZE="${OS_SPLIT#*:}"
+
+  # Conditions for GPT-specific ESP, XBL, and MSR
+  if [[ ${PHCONFIG[part-tbl]} == gpt ]]; then
+    if [[ ${PHCONFIG[esp-size]} -ge 100 ]]; then
+      PTLAYOUT+="EFI_SystemPart efisp ${PHCONFIG[esp-size]}"$'\n'
+    fi; if [[ ${PHCONFIG[xbl-size]} -gt 0 ]] && [[ ${PHCONFIG[boot-os]} =~ linux ]]; then
+      PTLAYOUT+="Ext_BootLoader xbldr ${PHCONFIG[xbl-size]}"$'\n'
+    fi; if [[ ${PHCONFIG[msr-size]} -ge 128 ]]; then
+      PTLAYOUT+="Microsoft_RSVP rsvp ${PHCONFIG[msr-size]}"$'\n'
+    fi
+  fi
+
+  # Conditions for Windows-Specific System, Paging, and Resuce partitions.
+  if [[ ${PHCONFIG[boot-os]} =~ windows ]]; then
+    if [[ ${WIN_SIZE} -gt 0 ]]; then
+      PTLAYOUT+="Windows_System basic ${WIN_SIZE}"$'\n'
+    fi; if [[ ${PHCONFIG[wre-size]} -gt 0 ]]; then
+      PTLAYOUT+="Windows_Rescue winrec ${PHCONFIG[wre-size]}"$'\n'
+    fi; if [[ pagepart,sep-swap =~ ${PHCONFIG[swap-cfg]} ]] && [[ ${PHCONFIG[swapsize]} -gt 0 ]]; then
+      PTLAYOUT+="Windows_Paging paging $((PHCONFIG[swapsize]+128))"$'\n'
+    fi
+  fi
+
+  # Conditions for Universal_Swap
+  [[ ${PHCONFIG[boot-os]} == linux+windows ]] && \
+  [[ ${PHCONFIG[swap-cfg]} == uni-swap ]] && \
+  [[ ${PHCONFIG[swapsize]} -gt 0 ]] && PTLAYOUT+="Universal_Swap paging $((PHCONFIG[swapsize]+128))"$'\n'
+
+  # Conditions for Linux-specific Swap_Vol, System, Rescue
+  if [[ ${PHCONFIG[boot-os]} =~ linux ]]; then
+    if [[ sep-swap,swappart =~ ${PHCONFIG[swap-cfg]} ]] && [[ ${PHCONFIG[swapsize]} -gt 0 ]]; then
+      PTLAYOUT+="Linux_Swap_Vol swap ${PHCONFIG[swapsize]}"$'\n'
+    fi; if [[ ${LIN_SIZE} -gt 0 ]]; then
+      PTLAYOUT+="Linux_System linux ${LIN_SIZE}"$'\n'
+    fi; if [[ ${PHCONFIG[lre-size]} -gt 0 ]]; then
+      PTLAYOUT+="Linux_Rescue rescue ${PHCONFIG[lre-size]}"$'\n'
+    fi
+  fi
+
+  echo "${PTLAYOUT}"
+}
+
+function GET_REMAINS_FOR_OSES {
+  local -i ALGNLOSS=1 # This accounts for the start of the first partition
+  local -i TTLPARTS=0 REMAINS=0
+
+  if [[ ${PHCONFIG[part-tbl]} == mbr ]]; then
+    TTLPARTS="$(GET_PARTITION_COUNT)"
+    if [[ ${TTLPARTS} -gt 4 ]]; then
+      # We must give up space for logical partitions in a MBR extended partition
+      # Technically only one sector is required, but alignment makes us lose more
+      # We'll put Windows on standard partitions and Linux on logical partitions
+      # The only way to exceed 4 partitions with this script is to linux+windows
+      ((ALGNLOSS++)) # This is the assumed Linux parition
+      [[ sep-swap,swappart =~ ${PHCONFIG[swap-cfg]} ]] && \
+        [[ ${PHCONFIG[swapsize]} -gt 0 ]] && ((ALGNLOSS++))
+      [[ ${PHCONFIG[lre-size]} -gt 0 ]] && ((ALGNLOSS++))
+    fi
+  fi
+
+  REMAINS=$((PHCONFIG[dev-size]-ALGNLOSS))
+  if [[ ${PHCONFIG[part-tbl]} == gpt ]]; then
+    [[ ${PHCONFIG[esp-size]} -gt 0 ]] && ((REMAINS-=${PHCONFIG[esp-size]}))
+    [[ ${PHCONFIG[xbl-size]} -gt 0 ]] && ((REMAINS-=${PHCONFIG[xbl-size]}))
+    [[ ${PHCONFIG[msr-size]} -gt 0 ]] && ((REMAINS-=${PHCONFIG[msr-size]}))
+  fi
+  if [[ ${PHCONFIG[boot-os]} =~ windows ]]; then
+    [[ ${PHCONFIG[wre-size]} -gt 0 ]] && ((REMAINS-=${PHCONFIG[wre-size]}))
+  fi; if [[ ${PHCONFIG[boot-os]} =~ linux ]]; then
+    [[ ${PHCONFIG[lre-size]} -gt 0 ]] && ((REMAINS-=${PHCONFIG[lre-size]}))
+  fi
+
+  case "${PHCONFIG[swap-cfg]}" in
+    pagepart|uni-swap) ((REMAINS-=(PHCONFIG[swapsize]+128)));;
+             sep-swap) ((REMAINS-=(PHCONFIG[swapsize]*2+128)));;
+             swappart) ((REMAINS-=PHCONFIG[swapsize]));;
+  esac
+  echo "${REMAINS}"
+}
+
+function GET_VALID_RANGE {
+  local OPSYSTEM="${1}" MEASURES="${2}"
+  local -A RANGE REMAINS
+
+  REMAINS[mibi]="$(GET_REMAINS_FOR_OSES)"
+  REMAINS[byte]="$((REMAINS[mibi]*MEBIBYTE))"
+
+  case "${OPSYSTEM}" in
+    windows)
+      case "${MEASURES}" in
+        g|gb|gig|gigabyte)
+          RANGE[min]="$(((MINIMUMS[win]+GIGABYTE-1)/GIGABYTE))"
+          RANGE[max]="$(((REMAINS[byte]-MINIMUMS[lin])/GIGABYTE))";;
+        gi|gib|gibibyte)
+          RANGE[min]="$(((MINIMUMS[win]+GIBIBYTE-1)/GIBIBYTE))"
+          RANGE[max]="$(((REMAINS[byte]-MINIMUMS[lin])/GIBIBYTE))";;
+        pct|percentage)
+          RANGE[min]="$((((MINIMUMS[win]*100/REMAINS[byte])+99)/100))"
+          RANGE[max]="$(((REMAINS[byte]-MINIMUMS[lin])*100/REMAINS[byte]/100))";;
+      esac;;
+    linux)
+      case "${MEASURES}" in
+        g|gb|gig|gigabyte)
+          RANGE[min]="$(((MINIMUMS[lin]+GIGABYTE-1)/GIGABYTE))"
+          RANGE[max]="$(((REMAINS[byte]-MINIMUMS[win])/GIGABYTE))";;
+        gi|gib|gibibyte)
+          RANGE[min]="$(((MINIMUMS[lin]+GIBIBYTE-1)/GIBIBYTE))"
+          RANGE[max]="$(((REMAINS[byte]-MINIMUMS[win])/GIBIBYTE))";;
+        pct|percentage)
+          RANGE[min]="$((((MINIMUMS[lin]*100/REMAINS[byte])+99)/100))"
+          RANGE[max]="$(((REMAINS[byte]-MINIMUMS[win])*100/REMAINS[byte]/100))";;
+      esac;
+  esac
+  echo "${RANGE[min]}:${RANGE[max]}"
+}
+
+function GENERATE_SFDISK_SCRIPT {
+  local -i START='1' PRTCOUNT='0' PRT_SIZE='0'
+  local PRTLABEL PRT_TYPE PTSCRIPT EXTENDED=false
+
+  PTSCRIPT="label: ${PHCONFIG[part-tbl]^^}"$'\n'"device: ${PHCONFIG[dev-name]}"$'\n'"unit: sectors"$'\n'
+  PRTCOUNT="$(GET_PARTITION_COUNT)"
+
+  while read -r PRTLABEL PRT_TYPE PRT_SIZE; do
+    if [[ ${PRT_SIZE} -gt 0 ]]; then
+      if [[ ${PHCONFIG[part-tbl]} == mbr ]]; then
+        if [[ ${PRTLABEL} =~ Linux ]] && [[ ${PRTCOUNT} -gt 4 ]]; then
+          if ${EXTENDED}; then
+            ((START++))
+          else
+            PTSCRIPT+=$'\n'"start= ${START}MiB, size= $((PHCONFIG[dev-size]-START))MiB, type=0f"
+            EXTENDED=true
+            ((START++))
+          fi
+        fi
+      fi
+      PTSCRIPT+=$'\n'"start= ${START}MiB, size= ${PRT_SIZE}MiB, type=$(GET_PARTITION_ID "${PRT_TYPE}" "${PHCONFIG[part-tbl]}")"
+      [[ ${PHCONFIG[part-tbl]} == gpt ]] && PTSCRIPT+=", name=\"${PRTLABEL}\""
+      [[ ${PHCONFIG[part-tbl]} == mbr ]] && [[ ${PRTLABEL} == Linux_System ]] && PTSCRIPT+=", bootable"
+      ((START+=PRT_SIZE))
+    fi
+  done <<< "$(GET_PARTITION_LAYOUT)"
+  echo "${PTSCRIPT}"
+}
+
+function VALIDATE_CONFIG {
+  local -i LIN_SIZE='0' PAGEROOM='0' WIN_SIZE='0'
+  local OS_SPLIT
+
+  # There's nothing to do if either 'device' or 'boot-os' are unset
+  if [[ -n ${PHCONFIG[dev-name]} ]] && [[ -n ${PHCONFIG[boot-os]} ]]; then
+
+    # If the user changes to Windows, make sure UEFI via MBR is not set
+    [[ ${PHCONFIG[boot-os]} =~ windows ]] && \
+    [[ ${PHCONFIG[boot-fw]} == uefi ]] && \
+    [[ ${PHCONFIG[part-tbl]} == mbr ]] && \
+    DIALOG_MSGBOX "${TITLEBAR}" "Invalid Boot Method" "Windows refuses to boot from UEFI via MRB" && \
+    SELECT_BOOT_METHOD
+
+   # If the user changes the OS, make sure the swap-cfg is still valid
+    case "${PHCONFIG[boot-os]}" in
+      linux)
+        [[ sep-swap,uniswap =~ ${PHCONFIG[swap-cfg]} ]] && PHCONFIG[swap-cfg]='swappart';;
+      windows)
+        [[ sep-swap,uniswap =~ ${PHCONFIG[swap-cfg]} ]] && PHCONFIG[swap-cfg]="pagepart";;
+    esac
+
+    # If single-booting, we can call SET_ALLOCATION and
+    # it will set things for us without user intervention
+    case "${PHCONFIG[boot-os]}" in
+      linux|windows) SET_ALLOCATION;;
+    esac
+
+    # Check to make sure space allocation is still valid
+    OS_SPLIT="$(CALCULATE_OS_SPLIT)"
+    WIN_SIZE="${OS_SPLIT%:*}"; LIN_SIZE="${OS_SPLIT#*:}"
+    [[ ${PHCONFIG[swap-cfg]} == pagefile ]] && PAGEROOM="${SYSTEM[ram-sys]}"
+    if [[ ${PHCONFIG[boot-os]} =~ windows ]] && \
+      [[ ${WIN_SIZE} -lt $(((MINIMUMS[win]/MEBIBYTE)+PAGEROOM)) ]]; then
+        DIALOG_MSGBOX "${TITLEBAR}" "Windows Allocation" "Your allocation to Windows is too small" 5 44
+        SET_ALLOCATION
+    elif [[ ${PHCONFIG[boot-os]} =~ linux ]] && \
+      [[ ${LIN_SIZE} -lt $(((MINIMUMS[lin]/MEBIBYTE)+PAGEROOM)) ]]; then
+        DIALOG_MSGBOX "${TITLEBAR}" "Linux Allocation" "Your allocation to Linux is too small"
+        SET_ALLOCATION
+    fi
+  fi
+}
+
+################################################################################
+# These functions handle user choices
+################################################################################
+
+function CHANGE_UNITS {
+  case "${PHCONFIG[units]}" in
+     si) PHCONFIG[units]='iec';;
+    iec) PHCONFIG[units]='si';;
+  esac
+  return 0
+}
+
+function SELECT_DEVICE {
+  ##############################################################################
+  local BAKTITLE="Device Selection"
+  local HELP_MSG="Select the device to use:"
+  ##############################################################################
+  local -a TAG_VALS DESCRIPS
+  local PREV_CFG="${PHCONFIG[dev-name]}"
+
+  while read -r DEV_PATH DEV_DESC; do
+    TAG_VALS+=("${DEV_PATH}")
+    DESCRIPS+=("${DEV_DESC//_/ }")
+  done <<< "$("${BIN[lsblk]}" -no TYPE,PATH,SIZE,MODEL,SERIAL | "${BIN[grep]}" '^disk\|^loop' | "${BIN[cut]}" -d\  -f2- | \
+    "${BIN[sed]}" 's/ \+/ /g;s/ /_/g;s|\(/dev/[0-9a-z/]\+\)_|\1 |g')"
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "${PREV_CFG}" \
+    "${HELP_MSG}" "TAG_VALS" "DESCRIPS" || return "${?}"
+
+  PHCONFIG[dev-name]="$(</tmp/selection)"
+  PHCONFIG[dev-scts]="$(</sys/class/block/"${PHCONFIG[dev-name]#?dev?}"/size)"
+  PHCONFIG[dev-size]="$(((PHCONFIG[dev-scts]-33)/2048))"
+  return 0
+}
+
+function SELECT_OS {
+  ##############################################################################
+  local BAKTITLE="Operating System Slection"
+  local HELP_MSG="What do you want to make room for?"
+  ##############################################################################
+  local -a TAG_VALS DESCRIPS SELSTATE
+  local PREV_CFG="${PHCONFIG[boot-os]}"
+
+  TAG_VALS=('linux+windows' 'linux' 'windows')
+  DESCRIPS=('Dual-boot Linux and Windows' 'Boot Linux only' 'Boot Windows only')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" "hidetags" "${PREV_CFG}" \
+    "${HELP_MSG}" "TAG_VALS" "DESCRIPS" || return "${?}"
+
+  PHCONFIG[boot-os]="$(</tmp/selection)"
+}
+
+function SELECT_BOOT_METHOD {
+  ##############################################################################
+  local BAKTITLE="Boot Method"
+  local HELP_MSG="This computer currently uses ${SYSTEM[fw-bits]}-bit ${SYSTEM[fw-type]}."
+  ##############################################################################
+  local -a TAG_VALS DESCRIPS
+  local PREV_CFG="${PHCONFIG[boot-fw]}:${PHCONFIG[part-tbl]}" PARTMODE
+
+  TAG_VALS=('uefi:gpt');  DESCRIPS=('UEFI boot from GPT disk')
+  if [[ ${PHCONFIG[boot-os]} =~ windows ]]; then
+    HELP_MSG+="\nNOTE: Windows refuses to use MBR with UEFI."
+  else
+    TAG_VALS+=('uefi:mbr'); DESCRIPS+=('UEFI boot from MBR disk')
+  fi
+
+  TAG_VALS+=('bios:mbr'); DESCRIPS+=('BIOS/CSM boot from MBR disk')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" "hidetags" "${PREV_CFG}" \
+    "${HELP_MSG}" "TAG_VALS" "DESCRIPS" || return "${?}"
+
+  PARTMODE="$(</tmp/selection)"
+  PHCONFIG[boot-fw]="${PARTMODE%:*}"
+  PHCONFIG[part-tbl]="${PARTMODE#*:}"
+}
+
+function SELECT_SWAP_CONFIG {
+  ##############################################################################
+  local BAKTITLE="Swap Space"
+  local HELP_MSG="How would you like to set up swap space?"
+  ##############################################################################
+  local -a TAG_VALS DESCRIPS
+  local PREV_CFG="${PHCONFIG[swap-cfg]}"
+
+  if [[ "${PHCONFIG[boot-os]}" == windows ]]; then
+    TAG_VALS+=('pagefile')
+    DESCRIPS+=("No Dedicated Partiton:  Windows will use pagefile.sys in its system partition")
+  fi; if [[ "${PHCONFIG[boot-os]}" == linux+windows ]]; then
+    TAG_VALS+=('uni-swap')
+    DESCRIPS+=("Universal Partition:  Linux will use pagefile.sys from Windows")
+    TAG_VALS+=('sep-swap' 'swappart')
+    DESCRIPS+=("Separate Partitions:  Linux and Windows will have dedicated but separate partitions"
+               "Linux Swap Partition:  Linux will have a separate swap partition, Windows will not")
+  fi; if [[ "${PHCONFIG[boot-os]}" == linux ]]; then
+    TAG_VALS+=('swappart')
+    DESCRIPS+=("Swap Partition:  Linux will have a dedicated swap partition")
+  fi; if [[ "${PHCONFIG[boot-os]}" == windows ]]; then
+    TAG_VALS+=('pagepart')
+    DESCRIPS+=("Dedicated Partition:  Windows will have a dedicated partition for pagefile.sys")
+  fi; if [[ "${PHCONFIG[boot-os]}" =~ linux ]]; then
+    TAG_VALS+=('pagefile')
+  fi; if [[ "${PHCONFIG[boot-os]}" == linux+windows ]]; then
+    DESCRIPS+=("No Swap Partitions:  Linux and Windows will both use swap files in their system/root partition")
+  fi; if [[ "${PHCONFIG[boot-os]}" == linux ]]; then
+    DESCRIPS+=("Swap File:  Linux will use a swap file in its root partition")
+  fi
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" "hidetags" "${PREV_CFG}" \
+    "${HELP_MSG}" "TAG_VALS" "DESCRIPS" || return "${?}"
+
+  PHCONFIG[swap-cfg]="$(</tmp/selection)"
+}
+
+function SET_SWAP_SPACE_OLD {
+  ##############################################################################
+  local BAKTITLE="Swap Size"
+  local HELP_MSG="Set the size of the swap/pagefile partition:"
+  ##############################################################################
+  local -a TAG_VALS DESCRIPS SELSTATE
+  local DFLTITEM PREV_CFG="${PHCONFIG[swapsize]}"
+
+  if [[ ${PHCONFIG[swap-cfg]} != pagefile ]]; then
+
+    for SCALING in 2 1.5 1 0.875 0.75 0.625 0.5 0.375 0.25 0.125; do
+      TAG_VALS+=("$("${BIN[awk]}" "BEGIN {print int(${SYSTEM[ram-sys]}*${SCALING})}")")
+      if [ "${TAG_VALS[-1]}" -gt 1023 ]; then
+        DESCRIPS+=("$("${BIN[printf]}" '%2.2fGiB' "$("${BIN[awk]}" "BEGIN {print ${TAG_VALS[-1]}/1024}")")")
+      else
+        DESCRIPS+=("$("${BIN[printf]}" '%2.2fMiB' "$("${BIN[awk]}" "BEGIN {print ${TAG_VALS[-1]}/1024}")")")
+      fi
+    done
+
+    [[ -n ${PREV_CFG} ]] && DFLTITEM="${PREV_CFG}" || DFLTITEM="${SYSTEM[ram-sys]}"
+
+    [[ ${TAG_VALS[-1]} -gt 1024 ]] && TAG_VALS+=('1024') && DESCRIPS+=('1.00GB') && SELSTATE+=('off')
+    [[ ${TAG_VALS[-1]} -gt 512 ]] && TAG_VALS+=('512') && DESCRIPS+=('512MiB') && SELSTATE+=('off')
+
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" "hidetags" "${DFLTITEM}" \
+      "${HELP_MSG}" "TAG_VALS" "DESCRIPS" "SELSTATE" || return "${?}"
+
+    PHCONFIG[swapsize]="$(</tmp/selection)"
+  fi
+}
+
+function SET_SWAP_SPACE {
+  ##############################################################################
+  local BAKTITLE="Swap Size"
+  local HELP_MSG="Set the size of the swap/pagefile partition(s):"
+  ##############################################################################
+  local DFLTSIZE PREV_CFG="${PHCONFIG[esp-size]}"
+
+  MAX_SIZE="$(( ( SYSTEM[ram-os] + SYSTEM[ram-gpu] + 1023 ) / 1024 * 2 ))"
+  DEF_SIZE="$(( ( PHCONFIG[swapsize] + 1023 ) / 1024 ))"
+
+  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
+    0 "${MAX_SIZE}" "${DEF_SIZE}" || return "${?}"
+  PHCONFIG[swapsize]="$(( $(</tmp/selection) * 1024 ))"
+}
+
+function SET_EFISP_SIZE {
+  ##############################################################################
+  local BAKTITLE="UEFI System Partition"
+  local HELP_MSG="Enter the MiB size of the UEFI System Partition.  "
+  HELP_MSG+="Microsoft''s minimum mandates at least 100MiB.  If you plan on "
+  HELP_MSG+="only storing boot loaders in the UEFI System Partiton, this is "
+  HELP_MSG+="fine.  Otherwise, add about 100MiB per Linux distro you plan to "
+  HELP_MSG+="install to make room for kernel and initramfs images."
+  ##############################################################################
+  local DFLTSIZE PREV_CFG="${PHCONFIG[esp-size]}"
+
+  [[ ${PREV_CFG} -ge 32 ]] && DFLTSIZE="${PREV_CFG}" || DFLTSIZE=100
+
+  if [[ ${PHCONFIG[boot-fw]} == uefi ]]; then
+    DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 32 953 "${DFLTSIZE}"
+    PHCONFIG[esp-size]="$(</tmp/selection)"
+  fi
+}
+
+function SET_XBOOTLDR_SIZE {
+  ##############################################################################
+  local BAKTITLE="Extended Boot Loader Partition"
+  local HELP_MSG="Useful when using systemd-boot or root-on-ZFS.\n\n"
+  HELP_MSG+="•  systemd-boot will only read from the UEFISP and XBOOTLDR partitions.\n"
+  HELP_MSG+="•  grub2 can read zpools only if they are created within grub2''s limitations.\n"
+  HELP_MSG+="•  rEFInd and syslinux can''t read zpools at all\n\n"
+  HELP_MSG+="You can set this to 0 to skip creating an XBOOTLDR partition when using:\n\n"
+  HELP_MSG+="•  any loader when the kernel and initramfs images are stored in the UEFISP\n"
+  HELP_MSG+="•  grub2 with root on non-ZFS partitions\n"
+  HELP_MSG+="•  rEFInd with root on either btrfs or ext\n"
+  HELP_MSG+="•  syslinux with root on btrfs, ext, or xfs and within limitations\n"
+  ##############################################################################
+  local -i DLG_HIGH=20 DLG_WIDE=80
+  local PREV_CFG="${PHCONFIG[xbl-size]}"
+
+  if [[ ${PHCONFIG[part-tbl]} == gpt ]] && [[ ${PHCONFIG[boot-os]} != windows ]]; then
+    DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 0 954 "${PREV_CFG}" || return "${?}"
+    PHCONFIG[xbl-size]="$(</tmp/selection)"
+  fi
+}
+
+function SET_MSR_SIZE {
+  ################################################################################
+  local BAKTITLE="Microsoft Reserved Partition"
+  local HELP_MSG+="This partition is used by Windows to store things like "
+  HELP_MSG+="Dynamic Disks metadata, boot information, and BitLocker startup "
+  HELP_MSG+="files.  The starting size of this parition has grown since its "
+  HELP_MSG+="introduction.  Microsoft'\\''s minumum is 128MiB, but the current "
+  HELP_MSG+="version of Windows 10 starts it out at 500MiB."
+  ################################################################################
+  local -i DLG_HIGH=9 DLG_WIDE="$(($(tput cols)*75/100))"
+  local PREV_CFG="${PHCONFIG[msr-size]}"
+
+  [[ ${PREV_CFG} -ge 128 ]] && DFLTSIZE=${PREV_CFG} || DFLTSIZE=128
+
+  if [[ ${PHCONFIG[part-tbl]} == gpt ]] && [[ ${PHCONFIG[boot-os]} != linux ]]; then
+       DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 16 954 "${DFLTSIZE}"
+       PHCONFIG[msr-size]="$(</tmp/selection)"
+  fi
+}
+
+function SET_WRE_SIZE {
+  ##############################################################################
+  local BAKTITLE="Windows Recovery Environment"
+  local HELP_MSG="This partition is used by Windows for Recovery. You can use "
+  HELP_MSG+="a smaller partition and let Windows make its own Recovery "
+  HELP_MSG+="Environment, or you could use this to store the Windows 10 "
+  HELP_MSG+="installation media instead."
+  ##############################################################################
+  local -a TAG_VALS DESCRIPS
+  local PREV_CFG="${PHCONFIG[wre-size]}"
+
+  if [[ ${PHCONFIG[boot-os]} =~ windows ]]; then
+    TAG_VALS=(0 512 550 572 600 640 668 700 750 768 800 5120 5772)
+    DESCRIPS=('No_Recovery_Environment' '537MB/512MiB/0.500GiB'
+              '577MB/550MiB/0.537GiB'   '600MB/572MiB/0.559GiB'
+              '629MB/600MiB/0.586GiB'   '671MB/640MiB/0.625GiB'
+              '700MB/668MiB/0.652GiB'   '734MB/700MiB/0.684GiB'
+              '786MB/750MiB/0.732GiB'   '805MB/768MiB/0.750GiB'
+              '839MB/800MiB/0.781GiB'   '5.369GB/5.000GiB'
+              '6.000GB/5.588GiB')
+
+    [[ '0 512 550 572 600 640 668 700 750 768 800 5120 5772' =~ ${PREV_CFG} ]] \
+      && DFLTSIZE="${PREV_CFG}" || DFLTSIZE=512
+
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" "hidetags" "${DFLTSIZE}" \
+      "${HELP_MSG}" "TAG_VALS" "DESCRIPS" || return "${?}"
+
+    PHCONFIG[wre-size]="$(</tmp/selection)"
+  fi
+}
+
+function SET_LRE_SIZE {
+  ##############################################################################
+  local BAKTITLE="Linux Rescue Partition"
+  local HELP_MSG="You can use this to create a secondary Linux install for use "
+  HELP_MSG+="as your own recovery environment.  Useful for when you bork your "
+  HELP_MSG+="main install and would otherwise need a flash drive to recover."
+  ##############################################################################
+  local -a TAG_VALS DESCRIPS
+  local -i DFLTSIZE
+  local PREV_CFG="${PHCONFIG[lre-size]}"
+
+  if [[ ${PHCONFIG[boot-os]} =~ linux ]]; then
+    TAG_VALS=(0 4768 5120 5722 6144 6676 7168 7629 8192 8583 9216 9537 10240)
+    DESCRIPS=('No_Rescue_Partition' '5.000GB/4.657GiB' '5.369GB/5.000GiB'
+              '6.000GB/5.588GiB'    '6.442GB/6.000GiB' '7.000GB/6.519GiB'
+              '7.516GB/7.000GiB'    '8.000GB/7.450GiB' '8.590GB/8.000GiB'
+              '9.000GB/8.382GiB'    '9.664GB/9.000GiB' '10.00GB/9.313GiB'
+              '10.74GB/10.00GiB')
+
+    [[ '0 4768 5120 5722 6144 6676 7168 7629 8192 8583 9216 9537 10240' =~ ${PREV_CFG} ]] \
+      && DFLTSIZE="${PREV_CFG}" || DFLTSIZE=512
+
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" "hidetags" "${DFLTSIZE}" \
+      "${HELP_MSG}" "TAG_VALS" "DESCRIPS" || return "${?}"
+
+    PHCONFIG[lre-size]="$(</tmp/selection)"
+  fi
+}
+
+function SET_ALLOCATION {
+  ##############################################################################
+  local BAKTITLE="Windows/Linux Space Allocation"
+  local HELP_MSG="Choose how you want to allocate space between the two OSes:"
+  ##############################################################################
+  local -a TAG_VALS DESCRIPS
+  local -A RANGE REMAINS
+  local PREV_CFG="${PHCONFIG[split-by]}" SPLIT
+
+  if [[ ${PHCONFIG[boot-os]} == linux ]]; then
+    PHCONFIG[split-mi]="$(GET_REMAINS_FOR_OSES)"; PHCONFIG[split-os]=linux; return 0
+  elif [[ ${PHCONFIG[boot-os]} == windows ]]; then
+    PHCONFIG[split-mi]="$(GET_REMAINS_FOR_OSES)"; PHCONFIG[split-os]=windows; return 0
+  elif [[ ${PHCONFIG[boot-os]} == linux+windows ]]; then
+    TAG_VALS=('g:windows' 'gb:windows' 'pct:windows' 'g:linux' 'gb:linux' 'pct:linux')
+    DESCRIPS=('Give Windows a set amount in GB (metric gigabytes), give Linux the rest'
+              'Give Windows a set amount in GiB (binary gibibytes), give Linux the rest'
+              'Give Windows a set percentage, give Linux the rest'
+              'Give Linux a set amount in GB (metric gigabytes), give Linux the rest'
+              'Give Linux a set amount in GiB (binary gibibytes), give Linux the rest'
+              'Give Linux a set percentage, give Windows the rest')
+
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" "hidetags" "" \
+      "${HELP_MSG}" "TAG_VALS" "DESCRIPS" "SELSTATE" || return "${?}"
+
+    SPLIT="$(</tmp/selection)"
+
+    PHCONFIG[split-os]="${SPLIT[type]#*:}"
+    PHCONFIG[split-by]="${SPLIT[type]%:*}"
+
+    case "${PHCONFIG[split-by]}" in
+        g) SPLIT="GB (metric gigabytes)";;
+       gb) SPLIT="GiB (binary gibibytes)";;
+      pct) SPLIT="percentage";;
+    esac
+
+    VALIDRNG="$(GET_VALID_RANGE "${PHCONFIG[split-os]}" "${PHCONFIG[split-by]}")"
+    RANGE[min]=${VALIDRNG%:*}
+    RANGE[max]=${VALIDRNG#*:}
+
+    case "${PHCONFIG[split-os]}" in
+      linux)
+        RANGE[set]=$(((RANGE[max]-RANGE[min])*85/100+RANGE[min]));;
+      windows)
+        RANGE[set]=$(((RANGE[max]-RANGE[min])*15/100+RANGE[min]));;
+    esac
+  fi
+
+  ##########################################################################
+  BAKTITLE="${PHCONFIG[split-os]^} Allocation"
+  HELP_MSG="Set your allocation to ${PHCONFIG[split-os]^} by ${SPLIT}:"
+  ##########################################################################
+  DLG_HIGH=8 && DLG_WIDE="$(($(tput cols)*75/100))"
+
+  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
+    "${RANGE[min]}" "${RANGE[max]}" "${RANGE[set]}" || return "${?}"
+
+  SPLIT="$(</tmp/selection)"
+
+  case "${PHCONFIG[split-by]}" in
+      g) PHCONFIG[split-mi]="$(((SPLIT*GIGABYTE+(MEBIBYTE-1))/MEBIBYTE))";;
+     gb) PHCONFIG[split-mi]="$(((SPLIT*GIBIBYTE+(MEBIBYTE-1))/MEBIBYTE))";;
+    pct) PHCONFIG[split-mi]="$(($(GET_REMAINS_FOR_OSES)*SPLIT/100))";;
+  esac
+}
+
+################################################################################
+# This carries out all selections
+################################################################################
+
+function FINALIZE {
+  local PTLAYOUT="$(GET_PARTITION_LAYOUT)"
+  ##############################################################################
+  BAKTITLE="Verify partition setup for ${PHCONFIG[dev-name]}"
+  LAYOUTSZ=$("${BIN[awk]}" -F' ' '{sum+=$3;} END{print sum;}' <<< "${PTLAYOUT}")
+  HELP_MSG="Does this look good to you?"$'\n\n'
+  HELP_MSG+="$("${BIN[grep]}" -v '\s0$' <<< "${PTLAYOUT}")"
+  HELP_MSG+=$'\nAWK_Calulated\ttotal-size\t'"${LAYOUTSZ}"$'\n'
+  HELP_MSG+=$'DEV_Reported\ttotal-size\t'"${PHCONFIG[dev-size]}"$'\n'
+  ##############################################################################
+
+  DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" || return 1
+
+  ##############################################################################
+  BAKTITLE="Progress"
+  HELP_MSG="Command output of partitioning and formatting:"
+  ##############################################################################
+  case "${BIN[dialog]}" in
+    *Xdialog) DLG_HIGH=9; DLG_WIDE=72;;
+           *) DLG_HIGH=6; DLG_WIDE=72;;
+  esac
+
+  WRKSTEPS=2
+  SCRIPT="${BIN[sfdisk]} -W always ${PHCONFIG[dev-name]%p} <<< \"$(GENERATE_SFDISK_SCRIPT)\""
+  SEP_LINE="$("${BIN[printf]}" '=%.0s' {1..72})"$'\n'
+
+  case "${BIN[dialog]}" in
+    *kdialog)
+      DBUS_REF=$("${BIN[dialog]}" --title "${TITLEBAR} -- ${BAKTITLE}" \
+        --geometry "${GUI_WIDE}x${GUI_HIGH}" --progressbar 'Starting...' "${WRKSTEPS}")
+      for (( WORKSTEP=1; WORKSTEP<WRKSTEPS; WORKSTEP++ )); do
+        qdbus "${DBUS_REF% *}" "${DBUS_REF#* }" setLabelText "${SCRIPT]%% <<<*}" > /dev/null
+        echo "${SEP_LINE}${SCRIPT}"$'\n'"${SEP_LINE}" >> /tmp/ph-debug 
+        qdbus "${DBUS_REF% *}" "${DBUS_REF#* }" Set "" value "${WORKSTEP}" > /dev/null
+        eval "${BIN[sudo]} -A ${SCRIPT} 2>&1" >> /tmp/ph-debug
+      done
+      qdbus "${DBUS_REF% *}" "${DBUS_REF#* }" close > /dev/null;;
+    *zenity)
+      for (( WORKSTEP=1; WORKSTEP<WRKSTEPS; WORKSTEP++ )); do
+        echo "$((WORKSTEP*100/WRKSTEPS))"
+        echo "# ${SCRIPT%% <<<*}"
+        echo "${SEP_LINE}${SCRIPT}"$'\n'"${SEP_LINE}" >> /tmp/ph-debug
+        eval "${BIN[sudo]} -A ${SCRIPT} 2>&1" >> /tmp/ph-debug
+      done | "${BIN[dialog]}" --title "${TITLEBAR} -- ${BAKTITLE}" --progress text='Starting...' --height=128 --width="${GUI_WIDE}" --auto-close;;
+    *dialog)
+      if [[ ${BIN[dialog]} =~ /dialog ]]; then
+        exec 3>&1
+        until echo "${PASSWORD}" | sudo -S true > /dev/null 2>&1; do
+          PASSWORD=$("${BIN[dialog]}" --title "ROOT PRIVILEGE REQUIRED" \
+          --backtitle "PARITION HELPER" --no-cancel --insecure --passwordbox "sudo password:" 8 40 \
+          2>&1 1>&3)
+        done
+        unset PASSWORD
+        exec 3>&-
+        MAIN_TTL="${BAKTITLE}"; BACK_TTL="${TITLEBAR}"
+      else
+        MAIN_TTL="${TITLEBAR}"; BACK_TTL="${BAKTITLE}"
+      fi
+      for (( WORKSTEP=1; WORKSTEP<WRKSTEPS; WORKSTEP++ )); do
+        echo "$((WORKSTEP*100/WRKSTEPS))"
+        printf 'XXX\n%s\nXXX\n' "${SCRIPT%% <<<*}"
+        echo "${SEP_LINE}${SCRIPT}"$'\n'"${SEP_LINE}" >> /tmp/ph-debug
+        eval "${BIN[sudo]} -A ${SCRIPT["$((WORKSTEP-1))"]} 2>&1" >> /tmp/ph-debug
+      done | "${BIN[dialog]}" --title "${MAIN_TTL}" --backtitle "${BACK_TTL}" --guage '' "${DLG_HIGH}" "${DLG_WIDE}";;
+  esac
+
+  # Change permissions on the debug output so it can be deleted as a regular user
+  # later.  This is in case the user AFKs long enough to lose sudo authentication.
+  "${BIN[sudo]}" chown "$("${BIN[id]}" -un):$("${BIN[id]}" -gn)" /tmp/ph-debug
+
+  ##############################################################################
+  BAKTITLE="OPERATION COMPLETE!"
+  ##############################################################################
+  DLG_HIGH="$(($(tput lines)*75/100))" && DLG_WIDE="$(($(tput cols)*75/100))"
+  GUI_WIDE=704
+
+  DIALOG_TEXT "${TITLEBAR}" "${BAKTITLE}" /tmp/ph-debug "${DLG_HIGH}" "${DLG_WIDE}"
+  rm /tmp/ph-debug
+
+  exit 0
+}
+
+################################################################################
+# When the user cancels or escapes, they end up here.
+################################################################################
+
+function FALLBACK_MENU {
+  local -a MENUTAGS MENUOPTS
+
+  while true; do
+    VALIDATE_CONFIG
+    unset MENUTAGS MENUOPTS
+
+    case ${PHCONFIG[units]} in
+      iec) UNITTEXT="(MiB, GiB, TiB)";;
+       si) UNITTEXT="(MB, GB, TB)";;
+    esac
+
+    MENUTAGS+=('units')
+    MENUOPTS+=("Units: ${PHCONFIG[units]^^} ${UNITTEXT}")
+
+    MENUTAGS+=('dev')
+    if [[ -z ${PHCONFIG[dev-name]} ]]; then
+      MENUOPTS+=("Device selection...")
+    else
+      MENUOPTS+=("Device selected: ${PHCONFIG[dev-name]}")
+      MENUTAGS+=('boot')
+      if [[ -z ${PHCONFIG[boot-os]} ]]; then
+        MENUOPTS+=("Operating System selection...")
+      else
+        DSPLY_OS="${PHCONFIG[boot-os]/+w/ + W}"
+        MENUOPTS+=("Operating System(s): ${DSPLY_OS^}")
+        MENUTAGS+=('type')
+        MENUOPTS+=("Boot Method: ${PHCONFIG[boot-fw]^^} via ${PHCONFIG[part-tbl]^^}")
+        MENUTAGS+=('scfg')
+        [[ -z ${PHCONFIG[swap-cfg]} ]] && MENUOPTS+=("Select swap configuration...")
+        case "${PHCONFIG[swap-cfg]}" in
+          pagefile) DSPLY_SC="No dedicated partitons";;
+          pagepart) DSPLY_SC="Windows Pagefile Partition";;
+          sep-swap) DSPLY_SC="Separate Partitions";;
+          swappart) DSPLY_SC="Linux Swap Partition";;
+          uni-swap) DSPLY_SC="Universal Swap";;
+        esac
+        [[ -n ${PHCONFIG[swap-cfg]} ]] && MENUOPTS+=("Swap Configuration: ${DSPLY_SC}")
+
+        if [[ -n ${PHCONFIG[swap-cfg]} ]] && [[ ${PHCONFIG[swap-cfg]} != pagefile ]]; then
+          MENUTAGS+=('swap')
+          MENUOPTS+=("Swap Size: $(CONVERT_UNITS "${PHCONFIG[swapsize]}" 'iec')")
+        fi
+
+        if [[ ${PHCONFIG[boot-fw]} == uefi ]]; then
+          MENUTAGS+=('esp')
+          MENUOPTS+=("UEFI System Partition size: $(CONVERT_UNITS "${PHCONFIG[esp-size]}")")
+        fi
+
+        if [[ ${PHCONFIG[part-tbl]} == gpt ]]; then
+          if [[ ${PHCONFIG[boot-os]} != windows ]]; then
+            MENUTAGS+=('xbl')
+            MENUOPTS+=("XBOOTLDR partition size: $(CONVERT_UNITS "${PHCONFIG[xbl-size]}")")
+          fi
+          if [[ ${PHCONFIG[boot-os]} != linux ]]; then
+            MENUTAGS+=('msr')
+            MENUOPTS+=("Microsoft Reserved Partition: $(CONVERT_UNITS "${PHCONFIG[msr-size]}")")
+          fi
+        fi
+
+        if [[ ${PHCONFIG[boot-os]} != linux ]]; then
+          MENUTAGS+=('wre')
+          MENUOPTS+=("Windows Recovery Environment: $(CONVERT_UNITS "${PHCONFIG[wre-size]}")")
+        fi
+
+        if [[ ${PHCONFIG[boot-os]} != windows ]]; then
+          MENUTAGS+=('lre')
+          MENUOPTS+=("Linux Rescue Partition: $(CONVERT_UNITS "${PHCONFIG[lre-size]}")")
+        fi
+
+        MENUTAGS+=('size')
+        OS_SPLIT="$(CALCULATE_OS_SPLIT)"
+        WIN_SIZE="$(CONVERT_UNITS "${OS_SPLIT%:*}")"
+        LIN_SIZE="$(CONVERT_UNITS "${OS_SPLIT#*:}")"
+        case "${PHCONFIG[boot-os]}" in
+                  linux) MENUOPTS+=("Allocation: ${LIN_SIZE}");;
+                windows) MENUOPTS+=("Allocation: ${WIN_SIZE}");;
+          linux+windows) MENUOPTS+=("Allocation: Windows=${WIN_SIZE} Linux=${LIN_SIZE}");;
+        esac
+
+        MENUTAGS+=('done')
+        MENUOPTS+=('Finalize...')
+
+      fi # [[ -n ${PHCONFIG[boot-os]} ]]
+    fi # [[ -n ${PHCONFIG[dev-name]} ]]
+
+    MENUTAGS+=('exit'); MENUOPTS+=("Exit")
+
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "Fallback Menu" 'hidetags' '' \
+      '' "MENUTAGS" "MENUOPTS"
+
+    case "$(</tmp/selection)" in
+      units) CHANGE_UNITS;;
+      dev) SELECT_DEVICE;;
+      boot) SELECT_OS;;
+      type) SELECT_BOOT_METHOD;;
+      scfg) SELECT_SWAP_CONFIG;;
+      swap) SET_SWAP_SPACE;;
+      esp) SET_EFISP_SIZE;;
+      xbl) SET_XBOOTLDR_SIZE;;
+      msr) SET_MSR_SIZE;;
+      wre) SET_WRE_SIZE;;
+      lre) SET_LRE_SIZE;;
+      size) SET_ALLOCATION;;
+      done) FINALIZE;;
+      exit) exit 0;;
+    esac
+  done
+}
+
+################################################################################
+# On initial run, the user ends up here where they're
+# run through each step one right after the other.
+################################################################################
+
+function WIZARD_MODE {
+  SELECT_DEVICE && \
+  SELECT_OS && \
+  SELECT_BOOT_METHOD && \
+  SELECT_SWAP_CONFIG && \
+  SET_SWAP_SPACE && \
+  SET_EFISP_SIZE && \
+  SET_XBOOTLDR_SIZE && \
+  SET_MSR_SIZE && \
+  SET_WRE_SIZE && \
+  SET_LRE_SIZE && \
+  SET_ALLOCATION && \
+  FINALIZE && exit 0 || return 1
+}
+
+################################################################################
+# TODO:  Allow the user to re-enter wizard mode.
+################################################################################
+
+while true; do
+  WIZARD_MODE || FALLBACK_MENU
+done

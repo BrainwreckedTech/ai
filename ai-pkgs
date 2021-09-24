@@ -1,0 +1,2603 @@
+#!/usr/bin/env bash
+
+source ai-funcs
+
+declare -r TITLEBAR="AI PACKAGE SELECTION"
+declare -i DLG_HIGH DLG_WIDE LST_HIGH
+declare -A INTENTS PACKAGES
+declare -a BROWSERS_BLINK BROWSERS_GECKO BROWSERS_WBKT2GTK BROWSERS_QTWEBKIT
+
+################################################################################
+# Overly-cautious verification of required binaries
+################################################################################
+
+for CMD in curl find pacman pacstrap reflector sort sudo tr xargs; do
+    BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
+done
+
+FILE[pci.ids]="$("${BIN[find]}" /usr/share -name 'pci.ids' 2> /dev/null)"
+[[ -z ${FILE[pci.ids]} ]] && ERR_LIST+="CRIT: Couldn't find pci.ids under /usr/share\n"
+
+################################################################################
+# At this point, we can tell the user about all the fail points.
+################################################################################
+
+CHECK_FOR_FAILURE_POINTS
+
+function ARE_ONE_OF_THESE_SELECTED {
+  local SELECTED=false
+  for PACKAGE in ${1}; do
+    [[ ${PACKAGES[*]} =~ ' '${PACKAGE}' ' ]] && echo "${PACKAGE}" && SELECTED=true
+  done
+  ${SELECTED}
+}
+
+function CLEAN_PACKAGE_GROUP {
+  local BAN_LIST LET_LIST
+
+  # This function is used to remove package options from package
+  # groups that the script will specifically handle later.
+  #
+  # The commented-out 'candidates' are just notes for the case where we might
+  # consider handling extra application categories in the future.  It would be
+  # be a giant PITA, so for now we just we just block the following:
+  #
+  #    web browsers
+  #    display managers
+  #    email clients
+  #    gvfs
+  #    thumbnailers
+  #    andontie-aur and chaotic-aur additions to groups that may be forced
+  #
+  # All of those categories are handled independently by this script.
+
+  BAN_LIST+='chrome-gnome-shell epiphany gdm totem '          # gnome:general
+  BAN_LIST+='gvfs gvfs-afc gvfs-goa gvfs-google gvfs-mtp gvfs-nfs gvfs-smb '    # gnome:gvfs
+  #BAN_LIST+='evince gedit gnome-calculator gnome-photos gnome-terminal totem ' # gnome:candidates
+  BAN_LIST+='evolution geary '                                # gnome-extra
+  BAN_LIST+='deepin-movie '                                   # deepin-extra
+  #BAN_LIST+='deepin-album deepin-calculator deepin-compressor deepin-editor deepin-music deepin-reader deepin-terminal '
+  BAN_LIST+='dragon ffmpegthumbs '                            # kde-multimedia
+  BAN_LIST+='kate '                                           # kde-utilities
+  BAN_LIST+='kmail kmail-account-wizard '                     # kdepim
+  BAN_LIST+='lxdm '                                           # lxde
+  #BAN_LIST+='pcmanfm pcmanfm-gtk3'                           # lxde:candidates
+  #BAN_LIST+='lxqt-archiver pcmanfm-qt'                       # lxqt:candidates
+  #BAN_LIST+='caja '                                          # mate:candidates
+  #BAN_LIST+='caja-image-converter caja-open-terminal caja-sendto caja-share caja-wallpaper caja-xattr-tags '
+  #BAN_LIST+='engrampa eom mate-calc mate-terminal pluma '    # mate-extra:candidates
+  BAN_LIST+='maui-clip '                                      # maui
+  BAN_LIST+='pantheon-videos '                                # pantheon
+  BAN_LIST+='discover-snap grub2-editor-frameworks plasma-nm sddm-kcm ' # plasma
+  BAN_LIST+='tumbler xfce4-panel-compiz '                     # xfce4
+  #BAN_LIST+='thunar thunar-volman xfce-terminal '            # xfce4:candidates
+  BAN_LIST+='parole '                                         # xfce4-goodies
+  #BAN_LIST+='mousepad ristretto thunar-archive-plugin thunar-media-tags-plugin' # xfce4-goodies:candidates
+  for MEMBER in $(${BIN[pacman]} -Sgq "${1}" | ${BIN[tr]} '\n' ' '); do
+    [[ "${BAN_LIST}" =~ ' '${MEMBER}' ' ]] || LET_LIST+="${MEMBER} "
+  done
+
+  echo "${LET_LIST% }"
+}
+
+function GET_BROWSERS {
+  local -i TTLSTEPS=33 CURSTEP
+  local BAKTITLE='Discovering browsers...'
+
+  if [[ ${BIN[dialog]} =~ /dialog ]]; then
+    local MAIN_TTL="${BAKTITLE^^}"
+    local BACK_TTL="${TITLEBAR^^}"
+    local DLG_HIGH=6
+  elif [[ ${BIN[dialog]} =~ Xdialog ]]; then
+    local MAIN_TTL="${TITLEBAR}"
+    local BACK_TTL="${BAKTITLE}"
+    local DLG_HIGH=9
+  fi
+
+  while true; do
+    printf 'XXX\nLooking for %s...\nXXX\n' "Brave"
+    IS_REPO_PKG 'brave' && BROWSERS_BLINK+=('brave:Brave')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    [[ ! ${BROWSERS_BLINK[*]} =~ Brave ]] && IS_REPO_PKG 'brave-bin' && BROWSERS_BLINK+=('brave-bin:Brave')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    
+    printf 'XXX\nLooking for %s...\nXXX\n' "Chromium"
+    BROWSERS_BLINK+=('chromium:Chromium')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    
+    printf 'XXX\nLooking for %s...\nXXX\n' "Chrome"
+    IS_REPO_PKG 'google-chrome' && BROWSERS_BLINK+=('google-chrome:Chrome')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    
+    printf 'XXX\nLooking for %s...\nXXX\n' "Edge"
+    IS_REPO_PKG 'microsoft-edge' && BROWSERS_BLINK+=('microsoft-edge:Edge')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    [[ ! ${BROWSERS_BLINK[*]} =~ Edge ]] && IS_REPO_PKG 'microsoft-edge-beta' && BROWSERS_BLINK+=('microsoft-edge-beta:Edge')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    [[ ! ${BROWSERS_BLINK[*]} =~ Edge ]] && IS_REPO_PKG 'microsoft-edge-beta-bin' && BROWSERS_BLINK+=('microsoft-edge-beta-bin:Edge')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    
+    printf 'XXX\nLooking for %s...\nXXX\n' "Opera"
+    BROWSERS_BLINK+=('opera:Opera')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Ungoogled Chromium"
+    IS_REPO_PKG 'ungoogled-chromium' && BROWSERS_BLINK+=('ungoogled-chromium:Ungoogled_Chromium')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Vivaldi"
+    BROWSERS_BLINK+=('vivaldi:Vivaldi')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    
+    printf 'XXX\nLooking for %s...\nXXX\n' "Yandex"
+    IS_REPO_PKG 'yandex-browser' && BROWSERS_BLINK+=('yandex-browser:Yandex.Browser')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    [[ ! ${BROWSERS_BLINK[*]} =~ Yandex ]] && IS_REPO_PKG 'yandex-browser-beta' && BROWSERS_BLINK+=('yandex-browser-beta:Yandex.Browser')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Firefox"
+    BROWSERS_GECKO+=('firefox:Firefox')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Firefox ESR"
+    IS_REPO_PKG 'firefox-esr' && BROWSERS_GECKO+=('firefox-esr:Firefox_ESR')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    [[ ! ${BROWSERS_GECKO[*]} =~ 'Firefox ESR' ]] && IS_REPO_PKG 'firefox-esr-bin' && BROWSERS_GECKO+=('firefox-esr-bin:Firefox_ESR')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Firedragon"
+    IS_REPO_PKG 'firedragon' && BROWSERS_GECKO+=('firedragon:Firedragon')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Icecat"
+    IS_REPO_PKG 'icecat' && BROWSERS_GECKO+=('icecat:Icecat')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Librewolf"
+    IS_REPO_PKG 'librewolf' && BROWSERS_GECKO+=('librewolf:Librewolf')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Palemoon"
+    IS_REPO_PKG 'palemoon' && BROWSERS_GECKO+=('palemoon:Palemoon')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    [[ ! ${BROWSERS_GECKO[*]} =~ Palemoon ]] && IS_REPO_PKG 'palemoon-bin' && BROWSERS_GECKO+=('palemoon-bin:Palemoon')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    [[ ! ${BROWSERS_GECKO[*]} =~ Palemoon ]] && IS_REPO_PKG 'palemoon-gtk3-bin' && BROWSERS_GECKO+=('palemoon-gtk3-bin:Palemoon')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    
+    printf 'XXX\nLooking for %s...\nXXX\n' "Seamonkey"
+    BROWSERS_GECKO+=('seamonkey:Seamonkey')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Waterfox"
+    IS_REPO_PKG 'waterfox' && BROWSERS_GECKO+=('waterfox:Waterfox')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    [[ ! ${BROWSERS_GECKO[*]} =~ Palemoon ]] && IS_REPO_PKG 'waterfox-bin' && BROWSERS_GECKO+=('waterfox-bin:Waterfox')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+    [[ ! ${BROWSERS_GECKO[*]} =~ Palemoon ]] && IS_REPO_PKG 'waterfox-g3-bin' && BROWSERS_GECKO+=('waterfox-g3-bin:Waterfox')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Eolie"
+    BROWSERS_WBKT2GTK+=('eolie:Eolie')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "GNOME Web"
+    BROWSERS_WBKT2GTK+=('epiphany:GNOME Web')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Badwolf"
+    IS_REPO_PKG 'badwolf' && BROWSERS_WBKT2GTK+=('badwolf:Badwolf')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Lariza"
+    IS_REPO_PKG 'lariza' && BROWSERS_WBKT2GTK+=('lariza:Lariza')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Netsurf"
+    BROWSERS_WBKT2GTK+=('netsurf:Netsurf')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Falkon"
+    BROWSERS_QTWEBKIT+=('falkon:Falkon')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "Otter Browser"
+    IS_REPO_PKG 'otter-browser' && BROWSERS_QTWEBKIT+=('otter-browser:Otter Browser')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    printf 'XXX\nLooking for %s...\nXXX\n' "QuteBrowser"
+    IS_REPO_PKG 'qutebrowser' && BROWSERS_QTWEBKIT+=('qutebrowser:Qutebrowser')
+    ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
+
+    break
+  done > >("${BIN[dialog]}" --title "${MAIN_TTL}" --backtitle "${BACK_TTL}" --guage '' "${DLG_HIGH}" 72)
+}
+
+function GET_GPU_TYPE_AMD {
+  case "${1}" in
+    # The architecture of the earliest ATI cards is not known
+    # We use ATI0 to denote proprietary 2D-only cards
+    # The earliest Wonder and Mach cards are ISA and won't show up
+                               *Mach64*|*'Mach 64'*) echo 'ati0';;
+    # ATI1 and ATI2 denote proprietary fixed-pipeline 3D cards
+    # ATI1 uses the rage/r128 drivers while ATI2 uses the r100 drivers
+                           *'3D Rage'*|*'Rage 128'*) echo 'ati1';;
+                                         *RS[12]00*) echo 'ati2';; # 300
+                                     *R100*|*RV100*) echo 'ati2';; # 7000
+    # ATI3 denoted proprietary 3D cards with some programmability
+                                     *R200*|*RV200*) echo 'ati3';; # 8000
+            *RV2[58]0*|*R3[05]0*|*RS3[05]0*|*RV350*) echo 'ati4:vd:';; # 9000
+                         *R360*|*RV3[678]0*|*RV410*) echo 'ati5:vd:va:';; # X[356]00
+          *R42[03]*|*R48[01]*|*RV420*|RS4[018][02]*) echo 'ati5:vd:va:';; # X800
+            *R520*|*R580*|*RV5[013567][056]*|*R690*) echo 'ati5:vd:va:';; # X1000
+                                 *RS600*|*RS7[48]0*) echo 'ati5:vd:va:';; # HD 2000
+    # This is where AMD buys out ATI and is more open about architecture
+                             *R600*|*RV610*|*RV630*) echo 'ts1:vd:va:';; # HD 2000
+                         *RV620*|*RV635*|*RV6[78]0*) echo 'ts1:vd:va:';; # HD 3000
+                                            *RS780*) echo 'ts1:vd:va:';; # HD 3000
+               *R700*|*RS740*|*RV7[13479]0*|*RS880*) echo 'ts1:vd:va:';; # HD 4000
+    *Cedar*|*Cypress*|*Hemlock*|*Juniper*|*Redwood*) echo 'ts2:vd:va:';; # HD 5000
+                        *Broadway*|*Madison*|*Park*) echo 'ts2:vd:va:';; # HD 5000
+                           *Barts*|*Caicos*|*Turks*) echo 'ts2:vd:va:';; # HD 6000
+     *Blackcomb*|*Granville*|*Lexington*|*Pinewood*) echo 'ts2:vd:va:';; # HD 6000
+      *Robson*|*Seymour*|*Whistler*|*'HD 65'[357]0*) echo 'ts2:vd:va';; # HD 6000
+                   *Sumo*|*Wrestler*|*'HD 62'[59]0*) echo 'ts2:vd:va:';; # HD 6000
+                                   *Onega*|*Thames*) echo 'ts2:vd:va:';; # HD 7000
+                                *Antilles*|*Cayman*) echo 'ts3:vd:va:';; # HD 6000
+                               *Richland*|*Trinity*) echo 'ts3:vd:va:';; # HD 8000
+                 *'Cape Verde'*|*Pitcairn*|*Tahiti*) echo 'gcn1:vd:va:vk:';; # HD 7000
+                   *Chelsea*|*Heathrow*|*Wimbledon*) echo 'gcn1:vd:va:vk:';; # HD 7000
+     *Malta*|*Mars*|*Neptune*|*Oland*|*Sun*|*Venus*) echo 'gcn1:vd:va:vk:';; # HD 8000 
+         *'R7 250'*|*'R9 270'*|*Jet*|*Opal*|*Topaz*) echo 'gcn1:vd:va:vk:';; # Rx 200
+                         *Curacao*|*Kryptos*|*Meso*) echo 'gcn1:vd:va:vk:';; # Rx 300
+                                          *Bonaire*) echo 'gcn2:vd:va:vk:cl:';; # HD 7000
+                                  *Kabini*|*Tamesh*) echo 'gcn2:vd:va:vk:cl:';; # HD 8000
+                      *Kaveri*|*Mullins*|*Vesuvius*) echo 'gcn2:vd:va:vk:cl:';; # Rx 200
+                                  *Hawaii*|*Tobago*) echo 'gcn2:vd:va:vk:cl:';; # Rx 300
+                                 *Tonga*|*Amethyst*) echo 'gcn3:vd:va:vk:cl:';; # Rx 200
+                             *Fiji*|*Stoney*|*Wani*) echo 'gcn3:vd:va:vk:cl:';; # Rx 300
+                               *Baffin*|*Ellesmere*) echo 'gcn4:vd:va:vk:cl:';; # RX [45]00
+                    *Lexa*|*'RX 5'[89]0*|*RX5[89]0*) echo 'gcn4:vd:va:vk:cl:';; # RX 500
+               *'Polaris '[12][012]*|*'Polaris 30'*) echo 'gcn4:vd:va:vk:cl:';; # RX 500
+         *'Vega 1'[02]*|*'Vega 20'*|*'Raven Ridge'*) echo 'gcn5:vd:va:vk:cl:';; # RX Vega
+                  *'Radeon 5700 XT'*|*'Navi 1'[04]*) echo 'rdna1:vd:va:vk:cl:';; # RX 5000
+                                    *'Navi 2'[123]*) echo 'rdna2:vd:va:vk:cl:';; # RX 6000
+    # Attempt to future-proof by categorizing "Navi nn" as RDNA2
+                                *'Navi '[0-9][0-9]*) echo 'rdna2';;
+  esac
+}
+
+function GET_CPU_TYPE_INTEL {
+  case "${1}" in
+                   7800) echo 'igen1a';;
+                   1240) echo 'igen1p';;
+               712[135]) echo 'igen1w';;
+                   1132) echo 'igen1s';;
+                   2562) echo 'igen2b';;
+                   3577) echo 'igen2a';;
+                   2572) echo 'igen2s';;
+                358[E2]) echo 'igen2m';;
+                258[2A]) echo 'igen3g';;
+                   2592) echo 'igen3a';;
+                   2772) echo 'igen3l';;
+                27A[2E]) echo 'igen3c';;
+               29[BCD]2) echo 'igen3b';;
+                A0[01]1) echo 'igen3p';;
+                2A[01]2) echo 'igen4cl';;
+                   2972) echo 'igen4lp';;
+                   2992) echo 'igen4bw';;
+                   29A2) echo 'igen4bx';;
+                   2982) echo 'igen4bl';;
+             2E[12349]2) echo 'igen4el:va:';;
+              2E02|2A42) echo 'igen4ct:va:';;
+                004[26]) echo 'igen5:va:';;
+               010[26a]) echo 'igen6s2:va:';;
+             01[12][26]) echo 'igen6s3:va:';;
+                   015A) echo 'igen7i0:va:cl:vk:';; #HD
+                015[26]) echo 'igen7i2:va:cl:vk:';; #HD2500
+               016[26A]) echo 'igen7i4:va:cl:vk:';; #HD4000
+      0F3[0123]|015[57]) echo 'igen7b0:va:cl:vk:';;
+        0[4ACD]0[26ABE]) echo 'igen7h0:va:cl:vk:';; #HD
+                   0A1E) echo 'igen7h2:va:cl:vk:';; #HD4200
+              041E|0A16) echo 'igen7h4:va:cl:vk:';; #HD4400
+     041[26AB]|0A1[2AB]) echo 'igen7h6:va:cl:vk:';; #HD4600
+          0[CD]1[26ABE]) echo 'igen7h6:va:cl:vk:';; #HD4600
+                   0A2E) echo 'igen7hi:va:cl:vk:';; #I5100
+                0D2[26]) echo 'igen7hj:va:cl:vk:';; #IP5200
+          0[4C]2[26ABE]) echo 'igen7h9:va:cl:vk:';; #HD5000
+     0A2[26AB]|0D2[ABE]) echo 'igen7h9:va:cl:vk:';; #HD5000
+               22B[023]) echo 'igen8c0:va:cl:vk:';; #HD
+                   22B1) echo 'igen8c4:va:cl:vk:';; #HD400
+            160[26ABDE]) echo 'igen8b0:va:cl:vk:';; #HD
+        161[BD]|162[DE]) echo 'igen8b0:va:cl:vk:';; #HD
+                   161E) echo 'igen8b3:va:cl:vk:';; #HD5300
+                   1616) echo 'igen8b5:va:cl:vk:';; #HD5500
+                   1612) echo 'igen8b6:va:cl:vk:';; #HD5600
+                   161A) echo 'igen8b7:va:cl:vk:';; #HD5700
+                   1626) echo 'igen8b9:va:cl:vk:';; #HD6000
+                   162B) echo 'igen8bi:va:cl:vk:';; #I6100
+                   1622) echo 'igen8bj:va:cl:vk:';; #IP6200
+                   162A) echo 'igen8bk:va:cl:vk:';; #IP6300
+             [01]A8[45]) echo 'igen9a0:va:cl:vk:';; #HD
+                   5A85) echo 'igen9a1:va:cl:vk:';; #HD500
+                   5A84) echo 'igen9a2:va:cl:vk:';; #HD505
+                190[AE]) echo 'igen9s0:va:cl:vk:';; #HD
+               190[26]B) echo 'igen9s1:va:cl:vk:';; #HD510
+                   191E) echo 'igen9s2:va:cl:vk:';; #HD515
+                   1916) echo 'igen9s3:va:cl:vk:';; #HD520
+               191[2BD]) echo 'igen9s4:va:cl:vk:';; #HD530
+                   1926) echo 'igen9si:va:cl:vk:';; #I540
+                   1927) echo 'igen9sj:va:cl:vk:';; #I550
+                   192D) echo 'igen9sk:va:cl:vk:';; #I555
+              193[2ABD]) echo 'igen9sl:va:cl:vk:';; #IP580
+                   3185) echo 'igen9gu:va:cl:vk:';; #UHD600
+                   3184) echo 'igen9gv:va:cl:vk:';; #UHD605
+               590[8AE]) echo 'igen9k0:va:cl:vk:';; #HD
+           591[35]|593B) echo 'igen9k0:va:cl:vk:';; #HD
+                590[26]) echo 'igen9k1:va:cl:vk:';; #HD610
+                   591E) echo 'igen9k2:va:cl:vk:';; #HD615
+                   5916) echo 'igen9k3:va:cl:vk:';; #HD620
+                591[2B]) echo 'igen9k4:va:cl:vk:';; #HD630
+                   5923) echo 'igen9k5:va:cl:vk:';; #HD635
+                   591C) echo 'igen9ku:va:cl:vk:';; #UHD615
+                   87C0) echo 'igen9kv:va:cl:vk:';; #UHD617
+                   5917) echo 'igen9kw:va:cl:vk:';; #UHD620
+                   5926) echo 'igen9ki:va:cl:vk:';; #IP640
+                   5927) echo 'igen9kj:va:cl:vk:';; #IP650
+                   3EA7) echo 'igen9c0:va:cl:vk:';; #HD
+    87CA|9B[AC][024ABC]) echo 'igen9cu:va:cl:vk:';; #UHD
+       3EA[234]|9B[24]1) echo 'igen9cu:va:cl:vk:';; #UHD
+         3E9[039C]|3EA1) echo 'igen9cv:va:cl:vk:';; #UHD610
+                9BA[58]) echo 'igen9cv:va:cl:vk:';; #UHD610
+                3EA[09]) echo 'igen9cw:va:cl:vk:';; #UHD620
+           3E9[12468AB]) echo 'igen9cx:va:cl:vk:';; #UHD630
+       9BC[568]|9B[EF]6) echo 'igen9cx:va:cl:vk:';; #UHD630
+                   3EA6) echo 'igen9ci:va:cl:vk:';; #IP645
+                3EA[58]) echo 'igen9cj:va:cl:vk:';; #IP655
+        8A5[079BD]|8A71) echo 'igenbi0:va:cl:vk:';; #HD
+            8A5[1234AC]) echo 'igenbii:va:cl:vk:';; #IP
+                8A5[68]) echo 'igenbiu:va:cl:vk:';; #UHD
+        9A6[08]|9A7[08]) echo 'igenxtu:va:cl:vk:';; #UHD
+      9AC[09]|9AD9|9AF8) echo 'igenxtu:va:cl:vk:';; #UHD
+                9A4[09]) echo 'igenxti:va:cl:vk:';; #IX
+                   4905) echo 'igenxd1:va:cl:vk:';; #DG1
+  esac
+}
+
+function GET_GPU_TYPE_NVIDIA {
+    case "${PCIDEVST}" in
+           *NV1[01578AF]*) GPU_TYPE='nv010';;
+              *NV2[058A]*) GPU_TYPE='nv020';;
+             *NV3[01456]*) GPU_TYPE='nv030';;
+             *NV4[01234]*) GPU_TYPE='nv040';;
+    # These have to be placed after the preceeding lines
+    # becuase the shorter names collide w/ the longer ones
+                *NV[45A]*) GPU_TYPE='nv004';;
+                    *NV3*) GPU_TYPE='nv003';;
+                    *NV1*) GPU_TYPE='nv001';;
+    # We now return to our regular schedule
+    *C51|C6[178]|C7[123]*) GPU_TYPE='nv040';;
+           *G[89][02468]*) GPU_TYPE='nv050:va:vd:cl:';;
+          *GT2[01][0568]*) GPU_TYPE='nv050:va:vd:cl:';;
+                *C7[789]*) GPU_TYPE='nv050:va:vd:cl:';;
+            *MCP[78][9A]*) GPU_TYPE='nv050:va:vd:cl:';;
+        *GF1[01][046789]*) GPU_TYPE='nv0c0:va:vd:cl:vk';;
+     *GK[12][01][04678A]*) GPU_TYPE='nv0e0:vd:cl:vk:';;
+        *GM[12]0[04678B]*) GPU_TYPE='nv110:vd:cl:vk:';;
+            *GP10[24678]*) GPU_TYPE='nv130:vd:cl:vk:';;
+                  *GV100*) GPU_TYPE='nv140:vd:cl:vk:';;
+          *TU1[01][2467]*) GPU_TYPE='nv160:vd:cl:vk:';;
+          *GA10[0246789]*) GPU_TYPE='nv170:vd:cl:vk:';;
+  esac
+}
+
+function GET_PRIVILEGE {
+  while ! ${BIN[sudo]} true; do
+    continue
+  done
+}
+
+function IS_REPO_PKG {
+  pacman -Si "${1}" > /dev/null 2>&1
+}
+
+function NETWORK_SCAN {
+  ##############################################################################
+  local -r BAKTITLE="Network Scan"
+  local -r HELP_MSG="Scanning network for ${1^^} servers..."
+  ##############################################################################  
+  local PORTNAME="${1^^}" RETVALUE
+  local -i PORTNMBR DLG_WIDE="$(( ${#HELP_MSG} + TITLEPAD ))"
+
+  case "${PORTNAME}" in
+    NFS) PORTNMBR=2049;;
+    SMB) PORTNMBR=445;;
+  esac
+
+  case "${BIN[dialog]}" in
+    */dialog)
+      ${BIN[dialog]} --infobox "${HELP_MSG}" 3 "${DLG_WIDE}"
+      nmap -p "${PORTNMBR}" -oG - "${IP_RANGE}" | grep -q open
+      RETVALUE="${?}"
+      ;;
+    */Xdialog)
+      rm -f /tmp/selection
+      while true; do
+        nmap -p "${PORTNMBR}" -oG - "${IP_RANGE}" | grep -q open && touch /tmp/selection
+        echo 'XXXX'
+        break
+      done | ${BIN[dialog]} --title "${TITLEBAR}" --backtitle "${BAKTITLE}" \
+        --no-buttons --infobox "${HELP_MSG}" 320x80 0
+      [[ -e /tmp/selection ]] && RETVALUE=0 || RETVALUE=1
+      ;;
+    *)
+      nmap -p "${PORTNMBR}" -oG - "${IP_RANGE}" | grep -q open
+      RETVALUE="${?}"
+      ;;
+  esac
+  return "${RETVALUE}"
+}
+
+function TRANSLATE_GPU_TYPE {
+  case "${1}" in
+       ati0) echo 'Mach series';;
+       ati1) echo 'Rage series';;
+       ati2) echo '7000 series';;
+       ati3) echo '8000 series';;
+       ati4) echo '9000 series';;
+       ati5) echo 'X series';;
+        ts?) echo "${1/ts/Terra Scale }";;
+       gcn?) echo "${1/gcn/Graphics Core Next }";;
+      rdna?) echo "${1/rdna/Radeon DNA }";;
+     igen1a) echo 'Intel Auburn Gen 1 i740';;
+     igen1p) echo 'Intel Portola Gen 1 i752';;
+     igen1w) echo 'Intel Whitney Gen 1 i810';;
+     igen1s) echo 'Intel Solano Gen 1 i815';;
+     igen2a) echo 'Intel Almador Gen 2 Extreme Graphics';;
+     igen2b) echo 'Intel Brookdale Gen 2 Extreme Graphics';;
+     igen2s) echo 'Intel Springdale Gen 2 Extreme Graphics 2';;
+     igen2m) echo 'Intel Montara Gen 2 Extreme Graphics 2';;
+     igen3g) echo 'Intel Grantsdale Gen 3 Graphics Media Accelerator 900';;
+     igen3a) echo 'Intel Alviso Gen 3 Graphics Media Accelerator 900';;
+     igen3l) echo 'Intel Lakeport Gen 3 Graphics Media Accelerator 950';;
+     igen3c) echo 'Intel Calistoga Gen 3 Graphics Media Accelerator 950';;
+     igen3b) echo 'Intel Bearlake Gen 3 Graphics Media Accelerator 3100';;
+     igen3p) echo 'Intel Pineview Gen 3 Graphics Media Accelerator 3150';;
+    igen4lp) echo 'Intel Lakeport Gen 4 Graphics Media Accelerator 3000';;
+    igen4bw) echo 'Intel Broadwater Gen 4 Graphics Media Accelerator 3000';;
+    igen4bx) echo 'Intel Broadwater Gen 4 Graphics Media Accelerator X3000';;
+    igen4bl) echo 'Intel Bearlake Gen 4 Graphics Media Accelerator X3500';;
+    igen4cl) echo 'Intel Crestline Gen 4 Graphics Media Accelerator X3100';;
+    igen4el) echo 'Intel Eaglelake Gen 4 Graphics Media Accelerator 4500';;
+    igen4ct) echo 'Intel Cantiga Gen 4 Graphics Media Accelerator 4500';;
+      igen5) echo 'Intel Ironlake Gen 5 HD Graphics';;
+    igen6s2) echo 'Intel Sandy Bridge Gen 6 HD Graphics 2000';;
+    igen6s3) echo 'Intel Sandy Bridge Gen 6 HD Graphics 3000';;
+    igen7i0) echo 'Intel Ivy Bridge Gen 7 HD Graphics';;
+    igen7i2) echo 'Intel Ivy Bridge Gen 7 HD Graphics 2500';;
+    igen7i4) echo 'Intel Ivy Bridge Gen 7 HD Graphics 4000';;
+    igen7b0) echo 'Intel Bay Trail Gen 7 HD Graphics';;
+    igen7h0) echo 'Intel Haswell Gen 7 HD Graphics';;
+    igen7h2) echo 'Intel Haswell Gen 7 HD Graphics 4200';;
+    igen7h4) echo 'Intel Haswell Gen 7 HD Graphics 4400';;
+    igen7h6) echo 'Intel Haswell Gen 7 HD Graphics 4600';;
+    igen7h9) echo 'Intel Haswell Gen 7 HD Graphics 5000';;
+    igen7hi) echo 'Intel Haswell Gen 7 Iris Graphics 5100';;
+    igen7hj) echo 'Intel Haswell Gen 7 Iris Pro Graphics 5200';;
+    igen8c0) echo 'Intel Cherryview Gen 8 HD Graphics';;
+    igen8c4) echo 'Intel Cherryview Gen 8 HD Graphics 400';;
+    igen8b0) echo 'Intel Broadwell Gen 8 HD Graphics';;
+    igen8b3) echo 'Intel Broadwell Gen 8 HD Graphics 5300';;
+    igen8b5) echo 'Intel Broadwell Gen 8 HD Graphics 5500';;
+    igen8b6) echo 'Intel Broadwell Gen 8 HD Graphics 5600';;
+    igen8b7) echo 'Intel Broadwell Gen 8 HD Graphics 5700';;
+    igen8b9) echo 'Intel Broadwell Gen 8 HD Graphics 6000';;
+    igen8bi) echo 'Intel Broadwell Gen 8 Iris Graphics 6100';;
+    igen8bj) echo 'Intel Broadwell Gen 8 Iris Graphics 6200';;
+    igen8bk) echo 'Intel Broadwell Gen 8 Iris Graphics 6300';;
+    igen9a0) echo 'Intel Apollo Lake Gen 9 HD Graphics';;
+    igen9a1) echo 'Intel Apollo Lake Gen 9 HD Graphics 500';;
+    igen9a2) echo 'Intel Apollo Lake Gen 9 HD Graphics 505';;
+    igen9s0) echo 'Intel Skylake Gen 9 HD Graphics';;
+    igen9s1) echo 'Intel Skylake Gen 9 HD Graphics 510';;
+    igen9s2) echo 'Intel Skylake Gen 9 HD Graphics 515';;
+    igen9s3) echo 'Intel Skylake Gen 9 HD Graphics 520';;
+    igen9s4) echo 'Intel Skylake Gen 9 HD Graphics 530';;
+    igen9si) echo 'Intel Skylake Gen 9 Iris Graphics 540';;
+    igen9sj) echo 'Intel Skylake Gen 9 Iris Graphics 550';;
+    igen9sk) echo 'Intel Skylake Gen 9 Iris Graphics 555';;
+    igen9sl) echo 'Intel Skylake Gen 9 Iris Graphics 580';;
+    igen9gu) echo 'Intel Gemini Lake Gen 9 UHD Graphics 600';;
+    igen9gv) echo 'Intel Gemini Lake Gen 9 UHD Graphics 605';;
+    igen9k0) echo 'Intel Kaby Lake Gen 9 HD Graphics';;
+    igen9k1) echo 'Intel Kaby Lake Gen 9 HD Graphics 610';;
+    igen9k2) echo 'Intel Kaby Lake Gen 9 HD Graphics 615';;
+    igen9k3) echo 'Intel Kaby Lake Gen 9 HD Graphics 620';;
+    igen9k4) echo 'Intel Kaby Lake Gen 9 HD Graphics 630';;
+    igen9k5) echo 'Intel Kaby Lake Gen 9 HD Graphics 635';;
+    igen9ku) echo 'Intel Kaby Lake Gen 9 UHD Graphics 615';;
+    igen9kv) echo 'Intel Kaby Lake Gen 9 UHD Graphics 617';;
+    igen9kw) echo 'Intel Kaby Lake Gen 9 UHD Graphics 620';;
+    igen9ki) echo 'Intel Kaby Lake Gen 9 Iris Plus Graphics 640';;
+    igen9kj) echo 'Intel Kaby Lake Gen 9 Iris Plus Graphics 650';;
+    igen9c0) echo 'Intel Coffee Lake Gen 9 HD Graphics';;
+    igen9cu) echo 'Intel Coffee Lake Gen 9 UHD Graphics';;
+    igen9cv) echo 'Intel Coffee Lake Gen 9 UHD Graphics 610';;
+    igen9cw) echo 'Intel Coffee Lake Gen 9 UHD Graphics 620';;
+    igen9cx) echo 'Intel Coffee Lake Gen 9 UHD Graphics 630';;
+    igen9ci) echo 'Intel Coffee Lake Gen 9 Iris Plus Graphics 645';;
+    igen9cj) echo 'Intel Coffee Lake Gen 9 Iris Plus Graphics 655';;
+    igenbi0) echo 'Intel Ice Lake Gen 11 HD Graphics';;
+    igenbii) echo 'Intel Ice Lake Gen 11 Iris Plus Graphics';;
+    igenbiu) echo 'Intel Ice Lake Gen 11 UHD Plus Graphics';;
+    igenxti) echo 'Intel Tiger Lake Xe Graphics';;
+    igenxd1) echo 'Intel DG1 Xe Graphics';;
+      nv001) echo 'Ancient';;
+      nv003) echo 'Archaic';;
+      nv004) echo 'Fahrenheit';;
+      nv010) echo 'Celsius';;
+      nv020) echo 'Kelvin';;
+      nv040) echo 'Curie';;
+      nv050) echo 'Tesla';;
+      nv0c0) echo 'Fermi';;
+      nv0e0) echo 'Kepler';;
+      nv110) echo 'Maxwel';;
+      nv130) echo 'Pascal';;
+      nv140) echo 'Volta';;
+      nv160) echo 'Turing';;
+      nv170) echo 'Ampere';;
+  esac
+}
+
+function UPDATE_PACMAN_MIRRORLIST {
+  local GEOIPURL="http://api.geoiplookup.net/"
+
+  GET_PRIVILEGE || exit 1
+
+  "${BIN[printf]}" "\033[1;34m::\033[97m Geolocating county...\033[0m\n"
+  COUNTRY="$("${BIN[curl]}" -s "${GEOIPURL}" | "${BIN[grep]}" countryname | ${BIN[sed]} 's/.*<countryname>\(.*\)<\/countryname>.*/\1/g')"
+  "${BIN[printf]}" " %s\n" "${COUNTRY}"
+  "${BIN[printf]}" "\033[1;34m::\033[97m Determining Best Mirrors...\033[0m\n"
+  "${BIN[sudo]}" "${BIN[reflector]}" -p https -l 10 -f 5 -c "${COUNTRY}" --sort rate --save /etc/pacman.d/mirrorlist
+  "${BIN[grep]}" '^Server' /etc/pacman.d/mirrorlist | "${BIN[sed]}" 's/\(.*\)/ \1/g'
+  "${BIN[sudo]}" "${BIN[pacman]}" -Sy
+}
+
+function INSTALL_DIRECTORY {
+  ##############################################################################
+  local -r BAKTITLE="OS Mount Location"
+  local -r HELP_MSG="Where is the OS root filessystem mounted?"
+  ##############################################################################
+  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt 
+  MOUNTPNT="$(</tmp/selection)"
+}
+
+function INTENTS_BROWSERS {
+  ##############################################################################
+  local -r BAKTITLE="Web Browser"
+  local -r HELP_MSG="What kind browser(s) do you want to install?"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+  local -i PID2KILL
+
+  GET_BROWSERS
+
+  SUGGESTS=(blink-based gecko-based webkit2-gtk qt5-webkit)
+  DESCRIPS=("$("${BIN[tr]}" '\n' ' ' <<< "${BROWSERS_BLINK[@]#*:}" | "${BIN[sed]}" 's/ $//g;s/ /, /g;s/_/ /g')"
+            "$("${BIN[tr]}" '\n' ' ' <<< "${BROWSERS_GECKO[@]#*:}" | "${BIN[sed]}" 's/ $//g;s/ /, /g;s/_/ /g')"
+            "$("${BIN[tr]}" '\n' ' ' <<< "${BROWSERS_WBKT2GTK[@]#*:}" | "${BIN[sed]}" 's/ $//g;s/ /, /g;s/_/ /g')"
+            "$("${BIN[tr]}" '\n' ' ' <<< "${BROWSERS_QTWEBKIT[@]#*:}" | "${BIN[sed]}" 's/ $//g;s/ /, /g;s/_/ /g')")
+
+  [[ -n ${PID2KILL} ]] && kill -9 "${PID2KILL}"
+
+  SELECTNS=(off off off off)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  INTENTS[browsers]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function INTENTS_DESKTOP {
+  ##############################################################################
+  local -r BAKTITLE="Desktop Environment"
+  local -r HELP_MSG="What kind of desktop do you want to set up?"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(budgie cinnamon deepin gnome icewm lxde lxqt mate openbox pekwm plasma ukui xfce4)
+  DESCRIPS=('GTK-based desktop environment from Solus'
+            'GTK-based desktop environment from LinuxMint'
+            'Qt-based desktop environment from Deepin'
+            'Premier GTK-based desktop environment from The GNOME Project'
+            'Lightweight window manager by Marko Maček, includes a session manager'
+            'GTK-based Lightweight X11 Desktop Environment'
+            'Qt-based Lightweight X11 Qt desktop environment'
+            'GTK-based desktop based on GNOME 2'
+            'A Blackbox spin-off that has evolved into its own, includes a session manager'
+            'An AEWM++ spin-off that has evolved into its own, includes a session manager.'
+            'Premier Qt-based desktop from KDE'
+            'Qt-based desktop environment of Ubuntu Kylin'
+            'A modular GTK-based desktop environment')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'desktop' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  INTENTS[desktop]="$(</tmp/selection)"
+
+  case "${INTENTS[desktop]}" in
+    budgie|cinnamon|gnome|lxde|mate|xfce) INTENTS[guitk]+='gtk';;
+                      deepin|lxqt|plasma) INTENTS[guitk]+='qt';;
+  esac
+}
+
+function INTENTS_GUI_TOOLKIT {
+  ##############################################################################
+  local -r BAKTITLE="GUI Toolkit"
+  local -r HELP_MSG="Which toolkit do you prefer?"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(gtk qt)
+  DESCRIPS=(GTK Qt)
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' 'gtk' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  INTENTS[guitk]="$(</tmp/selection)"
+}
+
+function INTENTS_PURPOSE {
+  ##############################################################################
+  local -r BAKTITLE="Purpose"
+  local -r HELP_MSG="What will be the intended use of this installation?"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(desktop server rescue)
+  DESCRIPS=('Standard desktop use' 'Standard server use' 'Rescue Media')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'desktop' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  INTENTS[purpose]="$(</tmp/selection)"
+}
+
+function INTENTS_RUNTIME {
+  ##############################################################################
+  local -r BAKTITLE="Runtime Environment"
+  local -r HELP_MSG="What will be the intended use of this installation?"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(hardware virtual container)
+  DESCRIPS=('Run directly on hardware' 'Run under virtualization' 'Run inside container')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'hardware' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  INTENTS[runtime]="$(</tmp/selection)"
+}
+
+function INTENTS_SERVERS {
+  ##############################################################################
+  local -r BAKTITLE="Services"
+  local -r HELP_MSG="Which services will be provided?"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  SUGGESTS=(database email file lan media web)
+  DESCRIPS=('Database server' 'E-mail server' 'File server'
+            'LAN services'    'Media server'  'Web server')
+  SELECTNS=(off off off off off off)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  INTENTS[servers]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function INTENTS_WEBSRVR_COMPONENTS {
+  ##############################################################################
+  local -r BAKTITLE="Web Server Components"
+  local -r HELP_MSG="Choose LAN services:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(certbot database php redis)
+  DESCRIPS=("Let'\\''s Encrypt automated SSL certificates"
+            'PHP Hypertext Processor'
+            'Remote Dictionary Server \(caching\)')
+  SELECTNS=(on on on on)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS'|| return "${?}"
+
+  if "${BIN[grep]}" -q database /tmp/selection; then
+    INTENTS[servers]+=' database'
+    sed -i 's/database//g;s/  \+/ /g' /tmp/selection
+  fi
+
+  INTENTS[websrvr]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function OPTION_ENTROPY {
+  ##############################################################################
+  local -r BAKTITLE="RNG Entropy"
+  local -r HELP_MSG="Install rng-tools to enhance RNG entropy?"
+  ##############################################################################
+  DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
+    && PACKAGES[optional]+='rng-tools '
+}
+
+function OPTION_NEOFETCH {
+  ##############################################################################
+  local -r BAKTITLE="NeoFetch"
+  local -r HELP_MSG="Install the neofetch system information tool?"
+  ##############################################################################
+  DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
+    && PACKAGES[optional]+='neofetch '
+}
+
+function OPTION_PLYMOUTH {
+  IS_REPO_PKG 'plymouth' || IS_REPO_PKG 'plymouth-git' || return 0
+  ##############################################################################
+  local -r BAKTITLE="Plymouth"
+  local -r HELP_MSG="Install graphical boot splash screen?"
+  ##############################################################################
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    if IS_REPO_PKG 'plymouth-git'; then
+      PACKAGES[optional]+='plymouth-git '
+    else
+      PACKAGES[optional]+='plymouth '
+    fi
+    if [[ ${PACKAGES[dispmngr]} == gdm ]]; then
+      IS_REPO_PKG 'gdm-plymouth' && PACKAGES[dispmngr]='gdm-plymouth'
+    fi
+  fi
+}
+
+function OPTION_SCRIPT_DEBUGGING {
+  ##############################################################################
+  local -r BAKTITLE="Shellcheck"
+  local -r HELP_MSG="Install shellcheck to debug shell scripts?"
+  ##############################################################################
+  DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
+    && PACKAGES[optional]+='shellcheck '
+}
+
+function OPTION_STEAM {
+  ##############################################################################
+  local -r BAKTITLE="Steam"
+  local -r HELP_MSG="Install Valve'\\''s Steam client?"
+  ##############################################################################
+  DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
+    && PACKAGES[steam]='steam'
+
+  if [[ -n ${PACKAGES[steam]} ]]; then
+    PACKAGES[steam]+=' steam-native-runtime ttf-liberation'
+    if [[ ${PACKAGES[vaapi]} =~ libva-vdpau-driver ]]; then
+      PACKAGES[steam]+=' lib32-nvidia-utils'
+    else
+      PACKAGES[steam]+=' lib32-mesa'
+    fi
+    [[ -z ${PACKAGES[netmngr]} ]] && PACKAGES[steam]+=' lib32-systemd'
+    IS_REPO_PKG 'steamtinkerlaunch' && PACKAGES[steam]+=' steamtinkerlaunch'
+  fi
+}
+
+function OPTION_THUMBNAILERS {
+  [[ ${INTENTS[guitk]} =~ qt ]] && local -r THUMBERS='ffmpegthumbs'
+  [[ ${INTENTS[guitk]} =~ gtk ]] && local -r THUMBERS='ffmpegthumbnailer tumbler webp-pixbuf-loader'
+  ##############################################################################
+  local -r BAKTITLE="Thumbnailers"
+  local -r HELP_MSG="Install ${THUMBERS/ / and }?"
+  ##############################################################################
+  DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
+    && PACKAGES[thumbs]="${THUMBERS}"
+}
+
+function OPTION_TIME_SYNC {
+  # If ntp is already selected, then use that.
+  [[ ${PACKAGES[lansrvcs]} =~ ntp ]] && return 0
+  ##############################################################################
+  local -r BAKTITLE="Time Synchronization"
+  local -r HELP_MSG="Use systemd-timesyncd to synchronize time?"
+  ##############################################################################
+  DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
+    || PACKAGES[lansrvcs]="$("${BIN[xargs]}" <<< "${PACKAGES[lansrvcs]} ntp")"
+}
+
+function PACKAGESEL_AUR {
+  ############################################################################
+  local -r BAKTITLE="Arch User Repository"
+  local -r HELP_MSG="Choose packages to compile/install from the AUR:"
+  ############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+
+  SUGGESTS=(base-devel arch-install-scripts)
+  DESCRIPS=('Base utilities required to compile packages from the AUR'
+            'Scripts to aid in installing Arch Linux (pacstrap, arch-chroot)')
+  SELSTATE=(on on)
+
+  if [[ ${BIN[dialog]} =~ /dialog ]]; then
+    ${BIN[dialog]} --infobox "Looking for available packages..." 3 37
+  elif [[ ${BIN[dialog]} =~ Xdialog ]]; then
+    ${BIN[dialog]} --title "${TITLEBAR}" --backtitle "${BAKTITLE}" \
+      --no-buttons --infobox "Looking for available packages..." 6 37 0 &
+    PID2KILL="${!}"
+  fi
+
+  if IS_REPO_PKG 'yay'; then
+    SUGGESTS+=(yay)
+    DESCRIPS+=('Pacman wrapper and AUR helper written in Go')
+    SELSTATE+=(off)
+  fi;
+  if IS_REPO_PKG 'pikaur'; then
+    SUGGESTS+=(pikaur)
+    DESCRIPS+=('Pacman wrapper and AUR helper written in Python')
+    SELSTATE+=(off)
+  elif IS_REPO_PKG 'pikaur-git'; then
+    SUGGESTS+=(pikaur-git)
+    DESCRIPS+=('Pacman wrapper and AUR helper written in Python')
+    SELSTATE+=(off)
+  fi;
+  if IS_REPO_PKG 'paru'; then
+    SUGGESTS+=(paru)
+    DESCRIPS+=('Pacman wrapper and AUR helper written in Rust')
+    SELSTATE+=(off)
+  fi;
+  if IS_REPO_PKG 'chaotic-keyring'; then
+    SUGGESTS+=(chaotic-keyring chaotic-mirrorlist)
+    DESCRIPS+=('Chaotic-AUR PGP keyring' 'Chaotic-AUR mirror list')
+    SELSTATE+=(off off)
+  fi
+
+  [[ -n ${PID2KILL} ]] && kill -9 "${PID2KILL}"
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+
+  PACKAGES[aurdevel]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_BOOT_LOADER {
+  # Containers don't need boot loaders
+  [[ ${INTENTS[runtime]} == container ]] && return 0
+  ##############################################################################
+  local -r BAKTITLE="Boot Loader"
+  local -r HELP_MSG="Choose a Boot Loader:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(grub refind syslinux systemd-boot none)
+  DESCRIPS=("Supports BIOS and UEFI multi-arch; all filesystems"
+            "Supports UEFI same-arch only; ext, btrfs, hfs, and iso filesystems"
+            "Supports BIOS and UEFI same-arch; ext, ntfs, and xfs filesystems "
+            "Supports UEFI same-arch only; filesystem support from firmware"
+            "Do not install a boot loader")
+
+  if [[ ${SYSTEM[fw-type]} == uefi ]]; then
+    if [[ ${SYSTEM[fw-bits]} == 32 ]] && [[ ${SYSTEM[cpu-bits]} == 64 ]]; then
+      DFLTITEM='grub'
+    else
+      if [[ ${INTENTS[purpose]} == server ]]; then
+        DFLTITEM='systemd-boot'
+      else
+        DFLTITEM='refind'
+      fi
+    fi
+  else
+    DFLTITEM='syslinux'
+  fi
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "${DFLTITEM}" \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  SELECTED="$(</tmp/selection)"
+  [[ systemd-boot,none =~ ${SELECTED} ]] || PACKAGES[bootload]="${SELECTED}"
+}
+
+function PACKAGESEL_BOOT_TOOLS {
+  # Containers don't need boot loaders
+  [[ ${INTENTS[runtime]} == container ]] && return 0
+  ##############################################################################
+  local -r BAKTITLE="Boot Tools"
+  local -r HELP_MSG="Choose boot tools:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+  local -i DLG_HIGH DLG_WIDE LST_HIGH
+
+  SUGGESTS=(memtest86+)
+  DESCRIPS=('Boot-time RAM diagnostic (BIOS)')
+  [[ ${SYSTEM[fw-type]} == bios ]] && SELECTNS+=(on) || SELECTNS+=(off)
+
+  if IS_REPO_PKG 'memtest86-efi'; then
+    SUGGESTS+=(memtest86-efi)
+    DESCRIPS+=('Boot-time RAM diagnostic (UEFI)')
+    [[ ${SYSTEM[fw-type]} == uefi ]] && SELECTNS+=(on) || SELECTNS+=(off)
+  fi
+
+  if [[ ${SYSTEM[cpu-bits]} == 64 ]]; then
+    SUGGESTS+=(edk2-shell)
+    DESCRIPS+=('EDK UEFI Shell')
+    [[ ${SYSTEM[fw-type]} == bios ]] && SELECTNS+=(off) || SELECTNS+=(on)
+  fi
+
+  SUGGESTS+=(efibootmgr)
+  DESCRIPS+=('UEFI boot manager')
+  [[ ${SYSTEM[fw-type]} == bios ]] && SELECTNS+=(off) || SELECTNS+=(on)
+
+  SUGGESTS+=(efitools sbsigntools)
+  DESCRIPS+=('UEFI secure boot tools' 'Secure Boot binary signing tools')
+  SELECTNS+=(off off)
+
+  LST_HIGH="${#SUGGESTS[@]}"; DLG_HIGH="$((LST_HIGH + LIST_PAD))"
+  DLG_WIDE="$(( ( $(MAX_LENGTH 'SUGGESTS') + $(MAX_LENGTH 'DESCRIPS') ) + MULTIPAD ))"
+
+  if [[ ${INTENTS[purpose]} =~ rescue ]]; then
+    SELECTNS=(on on on on on on)
+  fi
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[boottool]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_BROWSERS {
+  local -a SUGGESTS DESCRIPS SELSTATE
+
+  if [[ ${INTENTS[browsers]} =~ blink-based ]]; then
+    ############################################################################
+    local BAKTITLE="Blink-Based Web Browsers"
+    local HELP_MSG="Choose Blink-based web browsers:"
+    ############################################################################
+    SUGGESTS=("${BROWSERS_BLINK[@]%:*}")
+    DESCRIPS=("${BROWSERS_BLINK[@]#*:}")
+    DESCRIPS=("${DESCRIPS[@]/_/ }")
+    SELSTATE=(off off off off off off off off off)
+    DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
+      "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+    PACKAGES[browsers]="$("${BIN[xargs]}" <<< "${PACKAGES[browsers]} $(</tmp/selection)")"
+    if [[ -n ${PACKAGES[borwsers]} ]] && [[ ${INTENTS[desktop]} == gnome ]]; then
+      IS_REPO_PKG 'chrome-gnome-shell' && PACKAGES[browsers]+=' chrome-gnome-shell'
+    fi
+  fi; if [[ ${INTENTS[browsers]} =~ gecko-based ]]; then
+    ############################################################################
+    local BAKTITLE="Gecko-Based Web Browsers"
+    local HELP_MSG="Choose Gecko-based web browsers:"
+    ############################################################################
+    SUGGESTS=("${BROWSERS_GECKO[@]%:*}")
+    DESCRIPS=("${BROWSERS_GECKO[@]#*:}")
+    DESCRIPS=("${DESCRIPS[@]/_/ }")
+    SELSTATE=(off off off off off off off off off)
+    DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
+      "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+    PACKAGES[browsers]="$("${BIN[xargs]}" <<< "${PACKAGES[browsers]} $(</tmp/selection)")"
+  fi; if [[ ${INTENTS[browsers]} =~ webkit2-gtk ]]; then
+    ############################################################################
+    local BAKTITLE="WebKit2-GTK Web Browsers"
+    local HELP_MSG="Choose WebKit2-GTK web browsers:"
+    ############################################################################
+    SUGGESTS=("${BROWSERS_WBKT2GTK[@]%:*}")
+    DESCRIPS=("${BROWSERS_WBKT2GTK[@]#*:}")
+    DESCRIPS=("${DESCRIPS[@]/_/ }")
+    SELSTATE=(off off off off off off off off off)
+    DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
+      "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+    PACKAGES[browsers]="$("${BIN[xargs]}" <<< "${PACKAGES[browsers]} $(</tmp/selection)")"
+  fi; if [[ ${INTENTS[browsers]} =~ qt5-webkit ]]; then
+    ############################################################################
+    local BAKTITLE="Qt5-WebKit Web Browsers"
+    local HELP_MSG="Choose Qt5-WebKit web browsers:"
+    ############################################################################
+    SUGGESTS=("${BROWSERS_QTWEBKIT[@]%:*}")
+    DESCRIPS=("${BROWSERS_QTWEBKIT[@]#*:}")
+    DESCRIPS=("${DESCRIPS[@]/_/ }")
+    SELSTATE=(off off off off off off off off off)
+    DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
+      "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+    PACKAGES[browsers]="$("${BIN[xargs]}" <<< "${PACKAGES[browsers]} $(</tmp/selection)")"
+  fi
+}
+
+function PACKAGESEL_CERTBOT {
+  case "${PACKAGES[websrvr]}" in
+    apache) PACKAGES[certbot]='certbot-apache';;
+     nginx) PACKAGES[certbot]='certbot-nginx';;
+  esac
+}
+
+function PACKAGESEL_CPU_MICROCODE {
+  # Containers don't need CPU microcode
+  [[ ${INTENTS[runtime]} == container ]] && return 0
+  ##############################################################################
+  local -r BAKTITLE="CPU Microcode"
+  local -r HELP_MSG="Choose Microcode:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  SUGGESTS=(amd-ucode intel-ucode)
+  DESCRIPS=("AMD CPU microcode" "Intel CPU microcode")
+
+  if [[ ${INTENTS[purpose]} =~ rescue ]]; then
+    SELECTNS=(on on)
+  elif [[ "$(lscpu)" =~ AMD ]]; then
+    SELECTNS=(on off)
+  elif [[ "$(lscpu)" =~ GenuineIntel ]]; then
+    SELECTNS=(off on)
+  else
+    SELECTNS=(off off)
+  fi
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[cpumcode]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_DATABASE_SERVER {
+  ##############################################################################
+  local -r BAKTITLE="Database Server"
+  local -r HELP_MSG="Choose which database server to use:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(mariadb postgresql sqlite)
+  DESCRIPS=('MariaDB' 'PostgreSQL' 'SQLite')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'mariadb' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  PACKAGES[database]="$(</tmp/selection)"
+}
+
+function PACKAGESEL_DESKTOP {
+  local -A ARCHIVES CALCULTR FILE_MGR IMG_VIEW MSC_PLYR
+  local -A PDF_READ SCRN_RES TERMINAL TASK_MGR TXT_EDIT
+  local -a EXT_PKGS EXT_DSCS GRP_PKGS PKG_LIST PKG_DSCS AUR_PKGS AUR_DSCS
+  local -i PKGCOUNT
+  local DFLT_PKG GROUPPKG PKGGROUP 
+
+  # This is going to get complicated very quickly.
+  #   FORCED = base packages needed to install the desktop environment
+  # NTV_GRPS = groups recommended to install from for the desktop environment
+  # VIRT_GRP = extra packages that are in the official repos, just not grouped
+  # AUR_PKGS = extra packages that aren't in the official repos
+
+  # These are some defaults for minimalist desktop environments.
+  # They can be blown out in favor of more-specific options.
+
+  ARCHIVES=([gtk]='xarchiver'   [qt]='lxqt-archiver')
+  CALCULTR=([gtk]='galculator'  [qt]='liri-calculator')
+  FILE_MGR=([gtk]='pcmanfm'     [qt]='qtfm')
+  IMG_VIEW=([gtk]='gpicview'    [qt]='lximage-qt')
+  MSC_PLYR=([gtk]='lxmusic'     [qt]='audacious')
+  PDF_READ=([gtk]='xreader'     [qt]='qpdfview')
+  SCRN_RES=([gtk]='lxrandr'     [qt]='zrandr')
+  TASK_MGR=([gtk]='lxtask'      [qt]='qps')
+  TERMINAL=([gtk]='lxterminal'  [qt]='qterminal')
+  TXT_EDIT=([gtk]='xed'         [qt]='featherpad')
+
+  [[ ${INTENTS[guitk]} =~ gtk ]] && TK=gtk || TK=qt
+
+  for DFLT_PKG in ${ARCHIVES[${TK}]} ${CALCULTR[${TK}]} ${FILE_MGR[${TK}]} \
+    ${IMG_VIEW[${TK}]} ${MSC_PLYR[${TK}]} ${PDF_READ[${TK}]} ${SCRN_RES[${TK}]} \
+    ${TERMINAL[${TK}]} ${TASK_MGR[${TK}]} ${TXT_EDIT[${TK}]}; do
+    [[ qtfm,qps,zrandr =~ ${DFLT_PKG} ]] \
+      && AUR_PKGS+=("${DFLT_PKG}") || VIRT_GRP+=("${DFLT_PKG}")
+  done
+
+  # Note about NetworkManger:  NetworkManager is forced in certain DEs when the
+  # core components of that DE rely on it.
+
+  PACKAGES[demndtry]='xdg-user-dirs '
+
+  case "${INTENTS[desktop]}" in
+    *budgie*)
+      DESKTOP='budgie'
+      PACKAGES[demndtry]+="budgie-desktop $(CLEAN_PACKAGE_GROUP 'gnome') networkmanager"
+      VIRT_GRP=(budgie-desktop-view budgie-extras budgie-screensaver)
+      NTV_GRPS=(gnome-extra)
+      ;;
+    *cinnamon*)
+      DESKTOP='Cinnamon'
+      PACKAGES[demndtry]+='cinnamon gnome-panel metacity networkmanager'
+      VIRT_GRP=(blueberry gnome-keyring cinnamon-translations system-config-printer)
+      NTV_GRPS=(x-apps)
+      AUR_PKGS=(xviewer xplayer pix)
+      ;;
+    *deepin*)
+      DESKTOP='Deepin'
+      PACKAGES[demndtry]+=" $(CLEAN_PACKAGE_GROUP 'deepin') networkmanager"
+      NTV_GRPS=(deepin-extra)
+      unset VIRT_GRP
+      ;;
+    *gnome*)
+      DESKTOP='GNOME'
+      PACKAGES[demndtry]+="$(CLEAN_PACKAGE_GROUP 'gnome') networkmanager"
+      NTV_GRPS=(gnome-extra)
+      unset VIRT_GRP
+      ;;
+    *icewm*)
+      DESKTOP='IceWM'
+      PACKAGES[demndtry]+='icewm'
+      ;;
+    *lxde*)
+      DESKTOP='LXDE'
+      PACKAGES[demndtry]+="$(CLEAN_PACKAGE_GROUP 'lxde')"
+      VIRT_GRP=(xarchiver galculator xreader xed)
+      ;;
+    *lxqt*)
+      DESKTOP='LXQt'
+      PACKAGES[demndtry]+="$(CLEAN_PACKAGE_GROUP 'lxqt') breeze-icons"
+      VIRT_GRP=(alsa-lib libpulse libstatgrab libsysstat liri-calculator qpdfview featherpad)
+      ;;
+    *mate*)
+      DESKTOP="Mate"
+      PACKAGES[demndtry]+="$(CLEAN_PACKAGE_GROUP 'mate')"
+      NTV_GRPS=(mate-extra)
+      VIRT_GRP=(blueman espeak mate-applet-dock mate-applet-streamer network-manager-applet onboard orca system-config-printer)
+      AUR_PKGS=(brisk-menu mate-menu mate-tweak)
+      ;;
+    *openbox*)
+      DESKTOP="OpenBox"
+      PACKAGES[demndtry]+='openbox'
+      [[ ${INTENTS[guitk]} == gtk ]] && VIRT_GRP+=(obconf) || VIRT_GRP+=(obconf-qt)
+      ;;
+    *pekwm*)
+      DESKTOP='PekWM'
+      PACKAGES[demndtry]+='pekwm'
+      ;;
+    *plasma*)
+      DESKTOP='Plasma'
+      PACKAGES[demndtry]+="$(CLEAN_PACKAGE_GROUP 'plasma') $(CLEAN_PACKAGE_GROUP 'kde-system') $(CLEAN_PACKAGE_GROUP 'kf5') phonon-qt5-gstreamer"
+      NTV_GRPS=(kde-accessibility kde-graphics kde-multimedia kde-network kde-utilities kdepim kdesdk)
+      VIRT_GRP=(kcm-wacomtablet)
+      AUR_PKGS=(grub2-editor-frameworks kcm-pointing-devices kcm-uefi kcm-grub2-git plasma5-applets-eventcalander plymouth-kcm 
+      systemd-kcm)
+      ;;
+    *ukui*)
+      DESKTOP='UKUI'
+      PACKAGES[demndtry]+="$(CLEAN_PACKAGE_GROUP 'ukui') networkmanager"
+      unset AUR_PKGS
+      ;;
+    *xfce4*)
+      DESKTOP='XFCE'
+      PACKAGES[demndtry]+="$(CLEAN_PACKAGE_GROUP 'xfce4')"
+      NTV_GRPS=(xfce4-goodies)
+      unset VIRT_GRP
+      ;;
+  esac
+
+  SELSTATE=()
+  PKGCOUNT=0
+  BAKTITLE='Package Information Lookup'
+  if [[ ${BIN[dialog]} =~ /dialog ]]; then
+    MAIN_TTL="${BAKTITLE^^}"
+    BACK_TTL="${TITLEBAR^^}"
+    DLG_HIGH=6
+  elif [[ ${BIN[dialog]} =~ Xdialog ]]; then
+    MAIN_TTL="${TITLEBAR}"
+    BACK_TTL="${BAKTITLE}"
+    DLG_HIGH=9
+  fi
+
+  if [[ ${#VIRT_GRP[@]} -gt 0 ]]; then
+    for GROUPPKG in "${VIRT_GRP[@]}"; do
+      ((PKGCOUNT++))
+      echo "$((PKGCOUNT*100/${#VIRT_GRP[@]}))"
+      printf 'XXX\nLooking up information for %s...\nXXX\n' "${GROUPPKG}"
+      EXT_PKGS+=("${GROUPPKG}")
+      EXT_DSCS+=("$(${BIN[pacman]} -Si "${GROUPPKG}" | \
+                    ${BIN[grep]} 'Description' | ${BIN[sed]} "s/^.*: //g;s/'/'\\\''/g")")
+    done > >("${BIN[dialog]}" --title "${MAIN_TTL}" --backtitle "${BACK_TTL}" --guage '' "${DLG_HIGH}" 72)
+    BAKTITLE="Package selection for the ${DESKTOP} desktop environment"
+    HELP_MSG="Select packages:"
+    DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+      "${HELP_MSG}" 'EXT_PKGS' 'EXT_DSCS' 'SELSTATE'
+    PACKAGES[dechoice]="$("${BIN[xargs]}" <<< "${PACKAGES[dechoice]} $(</tmp/selection)")"
+  fi
+
+  if [[ ${#NTV_GRPS[@]} -gt 0 ]]; then
+    for PKGGROUP in "${NTV_GRPS[@]}"; do
+      read -r -a GRP_PKGS < <(CLEAN_PACKAGE_GROUP "${PKGGROUP}")
+      PKGCOUNT=0
+      for GROUPPKG in "${GRP_PKGS[@]}"; do
+        ((PKGCOUNT++))
+        echo "$((PKGCOUNT*100/${#GRP_PKGS[@]}))"
+        printf 'XXX\nLooking up information for %s...\nXXX\n' "${GROUPPKG}"
+        PKG_LIST+=("${GROUPPKG}")
+        PKG_DSCS+=("$(${BIN[pacman]} -Si "${GROUPPKG}" | \
+                      ${BIN[grep]} 'Description' | ${BIN[sed]} "s/^.*: //g;s/'/'\\\''/g")")
+      done > >("${BIN[dialog]}" --title "${MAIN_TTL}" --backtitle "${BACK_TTL}" --guage '' "${DLG_HIGH}" 72)
+      BAKTITLE="Package selection for the ${DESKTOP} desktop environment"
+      HELP_MSG="Select ${PKGGROUP} packages:"
+      DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+        "${HELP_MSG}" 'PKG_LIST' 'PKG_DSCS' 'SELSTATE'
+      PACKAGES[dechoice]="$("${BIN[xargs]}" <<< "${PACKAGES[dechoice]} $(</tmp/selection)")"
+      unset PKG_LIST PKG_DSCS
+    done
+  fi
+
+  PKGCOUNT=0
+
+  if [[ ${#AUR_PKGS[@]} -gt 0 ]]; then
+    for GROUPPKG in "${AUR_PKGS[@]}"; do
+      if IS_REPO_PKG "${GROUPPKG}"; then
+        ((PKGCOUNT++))
+        echo "$((PKGCOUNT*100/${#AUR_PKGS[@]}))"
+        printf 'XXX\nLooking up information for %s...\nXXX\n' "${GROUPPKG}"
+        AUR_REPO+=("${GROUPPKG}")
+        AUR_DSCS+=("$(${BIN[pacman]} -Si "${GROUPPKG}" | \
+                      ${BIN[grep]} 'Description' | ${BIN[sed]} "s/^.*: //g;s/'/'\\\''/g")")
+      fi
+    done > >("${BIN[dialog]}" --title "${MAIN_TTL}" --backtitle "${BACK_TTL}" --guage '' "${DLG_HIGH}" 72)
+    DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+      "${HELP_MSG}" 'AUR_REPO' 'AUR_DSCS' 'SELSTATE'
+    PACKAGES[dechoice]="$("${BIN[xargs]}" <<< "${PACKAGES[dechoice]} $(</tmp/selection)")"
+  fi
+
+}
+
+function PACKAGESEL_DISK_MANAGEMENT {
+  ##############################################################################
+  local -r BAKTITLE="Disk Management"
+  local -r HELP_MSG="Choose additional disk utilities:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+
+  SUGGESTS=(gpart gptfdisk parted testdisk)
+  DESCRIPS=('Partition table rescue/guessing tool' 'GPT disk manipulation tool'
+            'Partition manipulation tool'       'Check and undelete partitions')
+
+  [[ ${INTENTS[runtime]} == container ]] && \
+    SELSTATE=(off off off off) || SELSTATE=(off on on off)
+  [[ ${INTENTS[purpose]} == rescue ]] && SELSTATE=(on on on on)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+
+  PACKAGES[diskmgmt]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_DISPLAY_MANAGER {
+  ##############################################################################
+  local -r BAKTITLE="Display Manager"
+  ##############################################################################
+  if [[ deepin,ukui =~ ${INTENTS[desktop]} ]]; then
+    ############################################################################
+    local -r HELP_MSG="Deepin and UKUI depend on lightdm."
+    ############################################################################
+    DIALOG_MSGBOX "${HELP_MSG}"
+  else
+    ############################################################################
+    local -r HELP_MSG="Choose a display manager:"
+    ############################################################################
+    local -a SUGGESTS DESCRIPS
+
+    SUGGESTS=(gdm lightdm lxdm sddm xorg-xdm xorg-xinit)
+    DESCRIPS=("GNOME Display Manager"
+              "Light Display Manager (Canonical)"
+              "Lightweight X Display Manager (from LXDE)"
+              "Simple Desktop Display Manager (adopted by KDE and LXQt)"
+              "X Display Manager, a minimalist display manager (X.org)"
+              "No display manager (terminal login + startx)" )
+
+    case "${INTENTS[desktop]}" in
+      budgie|cinnamon|mate|xfce) DFLT_SEL='lightdm';;
+            icewm|openbox|pekwm) DFLT_SEL='xorg-xdm';;
+                    lxqt|plasma) DFLT_SEL='sddm';;
+                          gnome) DFLT_SEL='gdm';;
+    esac
+
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "${DFLT_SEL}" \
+      "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+    PACKAGES[dispmngr]="$(</tmp/selection)"
+    case "${PACKAGES[dispmngr]}" in
+      sddm)
+        if [[ ${INTENTS[guitk]} == qt ]]; then
+          if [[ ${INTENTS[desktop]} == plasma ]]; then
+            PACKAGES[dispmngr]+=" sddm-kcm"
+          else
+            PACKAGES[dispmngr]+=" sddm-config-editor-git"
+          fi
+        fi;;
+      xdm) PACKAGES[dispmngr]+=' xdm-archlinux';;
+    esac
+  fi
+}
+
+function PACKAGESEL_EMAIL_CLIENT {
+  ARE_ONE_OF_THESE_SELECTED 'evolution geary kmail seamonkey' && return 0
+  ##############################################################################
+  local -r BAKTITLE="Email Client"
+  local -r HELP_MSG="Choose an email client:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  if [[ ${INTENTS[guitk]} == gtk ]]; then
+    SUGGESTS=(balsa claws-mail evolution geary pantheon-mail)
+    DESCRIPS=('Lightweight email client written for GNOME'
+              'Highly configurable GTK email client'
+              "GNOME'\\''s personal information manager"
+              'An email client for GNOME with a modern UI'
+              "Pantheon'\\''s fork of Geary")
+  elif [[ ${INTENTS[guitk]} == qt ]]; then
+    SUGGESTS=(kmail kube trojita)
+    DESCRIPS=('KDE mail client'
+              'Modern Qt-based groupware client'
+              'Qt IMAP email client')
+  fi
+
+  SUGGESTS+=(seamonkey thunderbird)
+  DESCRIPS+=('Successor to the Netscape Navigator suite'
+            "Mozilla'\\''s Standalone mail and news reader")
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "${DFLT_SEL}" \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  PACKAGES[mailclnt]+="$(</tmp/selection)"
+
+  [[ ${PACKAGES[mailclnt]} == kmail ]] && PACKAGES[mailclnt]+=' kmail-account-wizard'
+}
+
+function PACKAGESEL_EMAIL_SERVER {
+  INTENTS[servers]+=' database'
+  PACKAGES[mailsrvr]='dovecot pigeonhole postfix rspamd swaks'
+}
+
+function PACKAGESEL_FILE_SERVER {
+  ##############################################################################
+  local -r BAKTITLE="File Server"
+  local -r HELP_MSG="Choose file servers:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(nfs samba)
+  DESCRIPS=('Linux NFS' 'Microsoft SMB')
+  SELECTNS=(on on)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS'|| return "${?}"
+
+  PACKAGES[filesrvr]="$(</tmp/selection)"
+}
+
+function PACKAGESEL_FILESYSTEMS_NATIVE {
+  # Containers aren't concerned with filesystems
+  [[ ${INTENTS[runtime]} == container ]] && return 0
+  ##############################################################################
+  local -r BAKTITLE="Native Linux Filesystems"
+  local -r HELP_MSG="Choose support for Linux filesystems:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+  local -i DLG_HIGH DLG_WIDE LST_HIGH
+
+  SUGGESTS=(btrfs-progs f2fs-tools jfsutils mdadm nilfs-utils reiserfsprogs xfsprogs)
+  DESCRIPS=('B-Tree File System' 'Flash-Friendly File System' 'Journaling File System (IBM)'
+            'Linux Software RAID' 'New Implementation of a Log-structured File System'
+            'Reiser File System' 'X File System (Sun)')
+
+  if [[ ${INTENTS[purpose]} == rescue ]]; then
+    SELSTATE=(on on on on on on on)
+  else
+    FSESUSED="$(lsblk -o FSTYPE | sed '/^$/d;/_member/d' | sort -u | tr '\n' ' ')"
+    for (( LC=0 ; LC < ${#SUGGESTS[@]} ; LC++ )); do
+      FSSTRING="${SUGGESTS[${LC}]}"
+      FSSTRING="${FSSTRING%progs}"
+      FSSTRING="${FSSTRING%utils}"
+      FSSTRING="${FSSTRING%tools}"
+      FSSTRING="${FSSTRING%-}"
+      [[ ${FSESUSED} =~ ${FSSTRING} ]] && SELSTATE+=('on') || SELSTATE+=('off')
+    done
+  fi
+
+  LST_HIGH="${#SUGGESTS[@]}"; DLG_HIGH="$((LST_HIGH + LIST_PAD))"
+  DLG_WIDE="$(( ( $(MAX_LENGTH 'SUGGESTS') + $(MAX_LENGTH 'DESCRIPS') ) + MULTIPAD ))"
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "${HELP_MSG}" \
+    'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+
+  PACKAGES[fsnative]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_FILESYSTEMS_OTHER {
+  # Containers aren't concerned with filesystems
+  [[ ${INTENTS[runtime]} == container ]] && return 0
+  ##############################################################################
+  local -r BAKTITLE="Other Filesystems"
+  local -r HELP_MSG="Choose support for other filesystems:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+
+  SUGGESTS=(dosfstools exfatprogs nfs-utils ntfs-3g samba udftools)
+  DESCRIPS=('FAT 12/16/32' 'Extended FAT' 'Network File System (Linux)'
+            'New Technology File System' 'Server Message Block (Windows)'
+            'Universal Disk Format (optical media)')
+
+  if [[ ${INTENTS[purpose]} == rescue ]]; then
+    SELSTATE=(on on on on on on)
+  else
+    FSESUSED="$(lsblk -o FSTYPE | sed '/^$/d;/_member/d' | sort -u | tr '\n' ' ')"
+    IP_RANGE="$(ip a | grep 'inet ' | grep 'brd ' | sed 's/^ *//g' | cut -d\  -f2)"
+
+    [[ ${FSESUSED} =~ vfat ]] && SELSTATE+=('on') || SELSTATE+=('off')
+    [[ ${FSESUSED} =~ exfat ]] && SELSTATE+=('on') || SELSTATE+=('off')
+    NETWORK_SCAN 'nfs' && SELSTATE+=('on') || SELSTATE+=('off')
+    [[ ${FSESUSED} =~ ntfs ]] && SELSTATE+=('on') || SELSTATE+=('off')
+    NETWORK_SCAN 'smb' && SELSTATE+=('on') || SELSTATE+=('off')
+    [[ -b /dev/sr0 ]] && SELSTATE+=('on') || SELSTATE+=('off')
+  fi
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+
+  PACKAGES[fsothers]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_GIMP_HELP {
+  ##############################################################################
+  local -r BAKTITLE="GIMP Help"
+  local -r HELP_MSG="Choose lnaguage for GIMP help."
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  while IFS=$'\t' read -r PACKAGE DESCRIBE; do
+    SUGGESTS+=("${PACKAGE}")
+    DESCRIPS+=("${DESCRIBE}")
+  done < <(${BIN[pacman]} -Ss gimp-help     | \
+           ${BIN[sed]} 's|^[a-z-].*/||g'      | \
+           ${BIN[sed]} 's| [0-9].*||g'        | \
+           ${BIN[sed]} 's|    \(.*\)|\1\t|g'  | \
+           ${BIN[tr]} '\n' '\t'               | \
+           ${BIN[sed]} 's|\t\t|\n|g'          | \
+           ${BIN[sort]} )
+
+  for (( LC=0 ; LC < ${#SUGGESTS[@]} ; LC++ )); do
+    SELECTNS+=(off)
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[miscgui]+=" $(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_GSTREAMER {
+  ##############################################################################
+  local -r BAKTITLE="GStreamer"
+  local -r HELP_MSG="Choose GStreamer components:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+
+  SUGGESTS=(gstreamer gstreamer-vaapi gst-libav gst-plugin-pipewire
+            gst-plugins-base gst-plugins-good gst-plugins-ugly gst-plugins-bad )
+  DESCRIPS=('GObject pipeline-based multimedia framework'
+            'VA-API plugin'
+            'LibVA plugin'
+            'Pipewire plugin'
+            'Essential exemplary set of plugins'
+            'Good-quality plugins under LGPL license'
+            'Good-quality plugins that might pose distribution problems.'
+            'Plugins that need more quality, testing, or documentation')
+
+  SELSTATE=(on on on on on on on on)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+
+  PACKAGES[gstreamer]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_GVFS {
+  ##############################################################################
+  local -r BAKTITLE="GVFS"
+  local -r HELP_MSG="GVFS is commonly used by GTK file managers"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+
+  SUGGESTS=(gvfs-afc gvfs-goa gvfs-gphoto2 gvfs-google gvfs-mtp gvfs-nfs gvfs-smb)
+  DESCRIPS=('Apple File Conduit backend'        'GNOME Online Accounts backend'
+            'Picture Transfer Protocol backend' 'Google Drive backend'
+            'Media Transfer Protocol backend'   'Network File System backend'
+            'Server Message Block backend')
+
+  SELSTATE=(on on on on on on on on)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+
+  PACKAGES[gvfs]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_HARDWARE_REPORTING {
+  # Containers don't run on hardware, not even virtual
+  [[ ${INTENTS[runtime]} == container ]] && return 0
+  ##############################################################################
+  local -r BAKTITLE="Hardware Reporting Tools"
+  local -r HELP_MSG="Choose hardware reporting tools:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+
+  SUGGESTS=(dmidecode hddtemp hdparm hwdetect)
+  DESCRIPS=('Desktop Management Interface utilities'
+            'Reports drive temps from SMART'
+            'Manipulate drive paramaters'
+            'Hardware Detection Script')
+  SELSTATE=(on on on on)
+  [[ ${INTENTS[runtime]} == virtual ]] && SELSTATE=(on off off on)
+
+  if IS_REPO_PKG 'inxi'; then
+    SUGGESTS+=(inxi)
+    DESCRIPS+=('CLI system information tool')
+    SELSTATE+=(on)
+  fi
+
+  SUGGESTS+=(lshw stress sysbench)
+  DESCRIPS+=('Provide detailed information about hardware'
+             'Stress-test CPU, RAM, I/O, and disks'
+             'Benchmark tool')
+
+  SELSTATE+=(on on on)
+  [[ ${INTENTS[runtime]} == virtual ]] && SELSTATE+=(on off off)
+  [[ ${INTENTS[purpose]} == server ]] && SELSTATE+=(on off off)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "${HELP_MSG}" \
+    'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+
+  PACKAGES[hwreport]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_HARDWARE_SUPPORT {
+  # These only make sense on real hardware
+  [[ container,virtual =~  ${INTENTS[runtime]} ]] && return 0
+  ##########################################################################gst####
+  local -r BAKTITLE="Hardware Support Tools"
+  local -r HELP_MSG="Choose hardware support tools:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+
+  SUGGESTS=(acpid cpupower dmraid lm_sensors smartmontools usbutils)
+  DESCRIPS=('ACPI Power Management daemon' 'Kernel CPU power savings tool'
+            'Fake-/Soft-RAID support'    'SMBus access and hardware monitoring'
+            'Control and monitor SMART-enabled drives'    'USB reporting tools')
+  SELSTATE=(on on on on on on)
+
+  if [[ ${INTENTS[purpose]} != rescue ]]; then
+    ls /dev/mapper/control | grep -qv '/dev/mapper/control' || SELSTATE[2]=off
+  fi
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+
+  PACKAGES[hwsuport]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_INITRAMFS_GEN {
+  # Containers don't boot
+  [[ ${INTENTS[runtime]} == container ]] && return 0
+  ##############################################################################
+  local -r BAKTITLE="Initial RAMFS Generator"
+  local -r HELP_MSG="Choose an initial RAMFS generator:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(dracut mkinitcpio)
+  DESCRIPS=("Red Hat'\\''s initramfs generator" "Arch'\\''s initramfs generator")
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'mkinitcpio' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  PACKAGES[initrd]="$(</tmp/selection)"
+}
+
+function PACKAGESEL_KERNEL {
+  # Containers don't need a kernel
+  [[ ${INTENTS[runtime]} == container ]] && return 0
+  ##############################################################################
+  local -r BAKTITLE="Linux Kernel"
+  local -r HELP_MSG="Choose a Linux kernel:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(linux linux-hardened linux-lts linux-zen)
+  DESCRIPS=('Standard kernel'          'Security-hardened kernel'
+            'Long Term Support kernel' 'Tuned for desktop, multimedia, gaming')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'linux' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  PACKAGES[kernel]="$(</tmp/selection)"
+  [[ ${INTENTS[runtime]} == hardware ]] && PACKAGES[kernel]+=" linux-firmware"
+}
+
+function PACKAGESEL_KERNEL_NONFREE_MODULES {
+  # Containers don't need kernels
+  { [[ ${INTENTS[runtime]} == container ]] || ! IS_REPO_PKG 'upd72020x-fw'; } && return 0
+  ################################################################################
+  local -r BAKTITLE="Non-Free Kernel Modules"
+  local -r HELP_MSG="Choose optional non-free kernel modules:"
+  ################################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+
+  SUGGESTS=(aic94xx-firmware wd719x-firmware upd72020x-fw)
+  DESCRIPS=('Adaptec AIC94xx SAS card firmware'
+            'Western Digital WD719x SCSI card firmware'
+            'Renesas uPD72020x USB 3.0 chipset firmware')
+  SELSTATE=(off off off)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+
+  PACKAGES[nfkmods]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_LAN_SERVICES {
+  # Containers don't do networking
+  [[ ${INTENTS[runtime]} == container ]] && return 0
+  ##################################################################################
+  local -r BAKTITLE="LAN Services"
+  local -r HELP_MSG="Choose LAN services:"
+  ##################################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(dnsmasq ntp)
+  DESCRIPS=('DHCP server and DNS cache' 'NTP server')
+  SELECTNS=(on on)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS'|| return "${?}"
+
+  PACKAGES[lansrvcs]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_LANGUAGE_HYPHENATION {
+  ##############################################################################
+  local -r BAKTITLE="Hyphenation"
+  local -r HELP_MSG="Choose your language:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  while IFS=$'\t' read -r PACKAGE DESCRIBE; do
+    SUGGESTS+=("${PACKAGE}")
+    DESCRIPS+=("${DESCRIBE}")
+  done < <(${BIN[pacman]} -Ss hyphen-     | \
+           ${BIN[sed]} 's|^[a-z-].*/||g'      | \
+           ${BIN[sed]} 's| [0-9].*||g'        | \
+           ${BIN[sed]} 's|    \(.*\)|\1\t|g'  | \
+           ${BIN[tr]} '\n' '\t'               | \
+           ${BIN[sed]} 's|\t\t|\n|g'          | \
+           ${BIN[sort]} )
+
+  for (( LC=0 ; LC < ${#SUGGESTS[@]} ; LC++ )); do
+    SELECTNS+=(off)
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[hyphenat]+="hyphen $(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_LANGUAGE_SPELLCHECK {
+  ##############################################################################
+  local -r BAKTITLE="Spell Checking Dictionary"
+  local -r HELP_MSG="Choose your language:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  while IFS=$'\t' read -r PACKAGE DESCRIBE; do
+    SUGGESTS+=("${PACKAGE}")
+    DESCRIPS+=("${DESCRIBE}")
+  done < <(${BIN[pacman]} -Ss hunspell-     | \
+           ${BIN[sed]} 's|^[a-z-].*/||g'      | \
+           ${BIN[sed]} 's| [0-9].*||g'        | \
+           ${BIN[sed]} 's|    \(.*\)|\1\t|g'  | \
+           ${BIN[tr]} '\n' '\t'               | \
+           ${BIN[sed]} 's|\t\t|\n|g'          | \
+           ${BIN[sort]} )
+
+  for (( LC=0 ; LC < ${#SUGGESTS[@]} ; LC++ )); do
+    SELECTNS+=(off)
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[spellchk]="hunspell $(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_LANGUAGE_THESAURUS {
+  ##############################################################################
+  local -r BAKTITLE="Thesaurus"
+  local -r HELP_MSG="Choose your language:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  while IFS=$'\t' read -r PACKAGE DESCRIBE; do
+    SUGGESTS+=("${PACKAGE}")
+    DESCRIPS+=("${DESCRIBE}")
+  done < <(${BIN[pacman]} -Ss mythes-     | \
+           ${BIN[sed]} 's|^[a-z-].*/||g'      | \
+           ${BIN[sed]} 's| [0-9].*||g'        | \
+           ${BIN[sed]} 's|    \(.*\)|\1\t|g'  | \
+           ${BIN[tr]} '\n' '\t'               | \
+           ${BIN[sed]} 's|\t\t|\n|g'          | \
+           ${BIN[sort]} )
+
+  for (( LC=0 ; LC < ${#SUGGESTS[@]} ; LC++ )); do
+    SELECTNS+=(off)
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[thesarus]+="libmythes $(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_MANPAGES {
+  # Containers don't need man pages
+  [[ ${INTENTS[runtime]} == container ]] && return 0
+  ##############################################################################
+  local -r BAKTITLE="Manual Pages"
+  local -r HELP_MSG="Choose a manpage reader:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(man-db mandoc)
+  DESCRIPS=("GNU man-page reader" "BSD man-page suite")
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'man-db' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  PACKAGES[manpages]="$(</tmp/selection)"
+}
+
+function PACKAGESEL_MEDIA_PLAYER {
+  ##############################################################################
+  local -r BAKTITLE="Media Player"
+  local -r HELP_MSG="Choose a media player:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  case "${INTENTS[desktop]}" in
+    budgie|cinnamon|gnome)
+      SUGGESTS+=(totem)
+      DESCRIPS+=('Movie player for GNOME based on GStreamer');;
+    deepin)
+      SUGGESTS+=(deepin-movie)
+      DESCRIPS+=('Movie player for Deepin based on MPV');;
+    maui)
+      SUGGESTS+=(maui-clip)
+      DESCRIPS+=('Movie player for MAUI based on MPV');;
+    pantheon)
+      SUGGESTS+=(pantheon-videos)
+      DESCRIPS+=('Pantheon video player based on GStreamer');;
+    plasma)
+      SUGGESTS+=(dragon kaffeine kmplayer)
+      DESCRIPS+=('Simple media player for KDE based on Phonon'
+                 'Media player for KDE that can use Phonon, FFMPEG, and other backends'
+                 'Media player for KDE based on VLC');;
+    xfce)
+      SUGGESTS+=(parole)
+      DESCRIPS+=('Media player for XFCE based on GStreamer');;
+  esac
+
+  case "${INTENTS[guitk]}" in
+    gtk)
+      SUGGESTS+=(celluloid glide snappy-player)
+      DESCRIPS+=('Simple GTK frontend to MPV'
+                 'Simple media player based on GTK and GStreamer'
+                 'Powerful media player based on GTK and GStreamer');;
+    qt)
+      SUGGESTS+=(qtav smplayer)
+      DESCRIPS+=('Media player based on Qt and FFmpeg'
+                 'Media player based on Qt and MPV');;
+  esac
+
+  SUGGESTS+=(mpv vlc xine-ui)
+  DESCRIPS+=('FOSS cross-platform media player'
+             'Multi-platform media player'
+             'A free video player for UNIX')
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[mediaply]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_MEDIA_SERVER {
+  ##############################################################################
+  local -r BAKTITLE="Media Server"
+  local -r HELP_MSG="Choose a media server:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(minidlna ums)
+  DESCRIPS=('ReadyMedia server' 'Universal Media Server')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'minidlna' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  PACKAGES[mediasrv]="$(</tmp/selection)"
+}
+
+function PACKAGESEL_MISC_GUI {
+  ##############################################################################
+  local -r BAKTITLE="Miscellaneous GUI Applications"
+  local -r HELP_MSG="Choose additional GUI applications:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  if IS_REPO_PKG 'autokey-common'; then
+   if [[ ${INTENTS[guitk]} == gtk ]] && IS_REPO_PKG 'autokey-gtk'; then
+      SUGGESTS+=(autokey-gtk)
+    elif [[ ${INTENTS[guitk]} == qt ]] && IS_REPO_PKG 'autokey-common'; then
+      SUGGESTS+=(autokey-qt)
+    fi
+    if [[ ${SUGGESTS[*]} =~ autokey-[gq]t ]]; then
+      DESCRIPS+=('Desktop automation utility for Linux and X11')
+    fi
+  fi
+
+  SUGGESTS+=(audacity); DESCRIPS+=('Digital audio waveform editor')
+
+  if IS_REPO_PKG 'authy'; then
+    SUGGESTS+=(authy); DESCRIPS+=('TOTP 2FA desktop application')
+  fi; if IS_REPO_PKG 'balena-etcher'; then
+    SUGGESTS+=(balena-etcher); DESCRIPS+=('Easily flash OS images to SD cards & USB drives')
+  fi
+
+  SUGGESTS+=(dia);       DESCRIPS+=('GTK-based diagram creation program')
+  SUGGESTS+=(discord);   DESCRIPS+=('Voice and text chat for gamers')
+  SUGGESTS+=(handbrake); DESCRIPS+=('Multithreaded video transcoder')
+  SUGGESTS+=(gimp);      DESCRIPS+=('GNU Image Manipulation Program')
+  SUGGESTS+=(inkscape);  DESCRIPS+=('Professional vector graphics editor')
+  SUGGESTS+=(keepass);   DESCRIPS+=('Easy-to-use cross-platform password manager')
+
+  [[ ${INTENTS[guitk]} == gtk ]] && SUGGESTS+=(librecad) || SUGGESTS+=(qcad)
+  DESCRIPS+=('A 2D CAD drawing tool')
+
+  SUGGESTS+=(obs-studio); DESCRIPS+=('FOSS live streaming and recording software')
+  SUGGESTS+=(simplescreenrecorder) DESCRIPS+=('Feature-rich screen recorder supporting X11 and OpenGL.')
+  SUGGESTS+=(telegram);   DESCRIPS+=('Official Telegram E2EE IM Desktop client')
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[miscgui]="$(${BIN[xargs]} < <(</tmp/selection))"
+
+  [[ ${PACKAGES[miscgui]} =~ gimp ]] && PACKAGESEL_GIMP_HELP
+
+  if [[ ${PACKAGES[miscgui]} =~ telegram ]]; then
+    PACKAGES[miscgui]+=' realtime-privileges'
+    [[ ${INTENTS[guitk]} == qt ]] && PACKAGES[miscgui]+=' qt5-svg'
+  fi
+
+}
+
+function PACKAGESEL_NETWORK_DIAGNOSTICS {
+  ##############################################################################
+  local -r BAKTITLE="Netork Diagnostics"
+  local -r HELP_MSG="Choose additional networking diagnostic utilities:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  SUGGESTS=(arp-scan iftop iptraf-ng nload nmap traceroute)
+  DESCRIPS=('Discover and fingerprint hosts on the LAN'
+            'Display bandwidth usage on an interface'
+            'Console-based network monitoring utility'
+            'Monitors network traffic and bandwidth usage'
+            'Network discovery and security auditing'
+            'Tracks the route taken by packets over TCP/IP')
+  SELECTNS=(on on on on on on)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[netdiag]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_NETWORK_MANAGER {
+  ARE_ONE_OF_THESE_SELECTED 'networkmanager connman' && return 0
+  ##############################################################################
+  local -r BAKTITLE="Network Manager"
+  local -r HELP_MSG="Choose a Network Manager:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(connman dhcpcd netctl networkmanager systemd-networkd)
+  DESCRIPS=("Intel'\''s modular network connection manager"
+            "Simple daemon that only gets DHCP leases on connection activation"
+            "Arch Linux'\''s systemd-based network manager"
+            "Red Hat'\''s network connection manager"
+            "systemd'\''s built-in network connection manager")
+
+  case "${INTENTS[purpose]}" in
+    *desktop*) DFLT_SEL='networkmanager';;
+     *server*) DFLT_SEL='systemd-networkd';;
+     *rescue*) DFLT_SEL='connman';;
+            *) DFLT_SEL='netctl';;
+  esac
+
+  case "${INTENTS[desktop]}" in
+       *lxde*) DFLT_SEL='connman';;
+       *lxqt*) DFLT_SEL='connman';;
+      *icewm*) DFLT_SEL='connman';;
+      *pekwm*) DFLT_SEL='connman';;
+    *openbox*) DFLT_SEL='connman';;
+  esac
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "${DFLT_SEL}" \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  SELECTED="$(</tmp/selection)"
+
+  [[ ${SELECTED} != systemd-networkd ]] && PACKAGES[netmngr]="${SELECTED}"
+  case "${SELECTED}" in
+    connman)
+      [[ ${INTENTS[guitk]} == qt ]] && PACKAGES[netmngr]+=" cmst"
+      [[ ${INTENTS[guitk]} == gtk ]] && PACKAGES[netmngr]+=" connman-gtk"
+      ;;
+    networkmanager)
+      [[ ${INTENTS[guitk]} =~ qt ]] && PACKAGES[netmngr]+=" plasma-nm"
+      [[ ${INTENTS[guitk]} =~ gtk ]] && PACKAGES[netmngr]+=" network-manager-applet"
+      ;;
+  esac
+}
+
+function PACKAGESEL_NETWORK_TOOLS {
+  ##############################################################################
+  local -r BAKTITLE="Netork Tools"
+  local -r HELP_MSG="Choose additional networking tools:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  SUGGESTS=(bind curl ethtool inetutils iwd net-tools wget whois wol)
+  DESCRIPS=('Complete implementation of the DNS protocol'
+            'URL retrieval utility and library'
+            'Controls network drivers and hardware'
+            'Collection of common network programs'
+            'Internet Wireless Daemon'
+            'Linux network configuration tools'
+            'Retrieve files from the Internet'
+            'WHOIS client'
+            'Wake On LAN program')
+  SELECTNS=(on on on on on on on on on)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[nettools]+="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_OFFICE_SUITE {
+  ##############################################################################
+  local -r BAKTITLE="Office Suite"
+  local -r HELP_MSG="Choose your office suite(s):"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  SUGGESTS=(calligra goffice libreoffice)
+  DESCRIPS=('ODF-compliant KDE-based open-source office suite'
+            'AbiWord and Gnumeric ODF-compliant open-source office applications'
+            'Premier ODF-compliant open-source office suite')
+
+  if IS_REPO_PKG 'onlyoffice-bin'; then
+    SUGGESTS+=(onlyoffice)
+    DESCRIPS+=('An open-source suite that focuses on Microsoft Office compatibility.')
+  fi
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[office]="$(${BIN[xargs]} < <(</tmp/selection))"
+  PACKAGES[office]="${PACKAGES[office]/goffice/abiword gnumeric}"
+  PACKAGES[office]="${PACKAGES[office]/libreoffice/libreoffice-fresh}"
+  PACKAGES[office]="${PACKAGES[office]/onlyoffice/onlyoffice-bin}"
+}
+
+function PACKAGESEL_PHP_MODULES {
+  [[ ${INTENTS[redis]} =~ redis ]] && PACKAGES[phpmods]='php-redis'
+  ##############################################################################
+  local -r BAKTITLE="PHP Components"
+  local -r HELP_MSG="Choose PHP Components:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(php-apcu php-gd php-imagick php-intl php-sodium)
+  DESCRIPS=('Adavanced PHP Caching' 'PHP Graphics Draw' 'ImageMagick'
+            'Internationalization'  'Redis caching'     'Cryptography')
+  SELECTNS=(on on on on on on)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[phpmods]+="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_PHP_WEBSRVR_IFACE {
+  [[ ${PACKAGES[websrvr]} == nginx ]] && PACKAGES[phpiface]='php-fpm' && return 0
+  ##############################################################################
+  local -r BAKTITLE="PHP Runtime"
+  local -r HELP_MSG="Choose how to run PHP:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(php-cgi php-fpm)
+  DESCRIPS=('Common Gateway Interface' 'FastCGI Process Manager' )
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'php-fpm' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  PACKAGES[phpiface]="$(</tmp/selection)"
+}
+
+function PACKAGESEL_PIPEWIRE {
+  ##############################################################################
+  local -r BAKTITLE="Pipewire"
+  local -r HELP_MSG="Choose PHP Components:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(pipewire pipewire-alsa pipewire-pulse pipewire-jack easyeffects xdg-desktop-portal)
+  DESCRIPS=('Low-latency audio/video router and processor'
+            'Route ALSA API calls through Pipewire'
+            'Route PulseAudio API calls through Pipewire'
+            'Route JACK API calls through Pipewire'
+            'Audio effects for Pipewire applications'
+            'Screen sharing (WebRTC)')
+  SELECTNS=(on on on on on on)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[pipewire]="$(${BIN[xargs]} < <(</tmp/selection))"
+
+  if [[ ${PACKAGES[pipewire]} =~ xdg-desktop-portal ]]; then
+    [[ ${INTENTS[guitk]} == gtk ]] && PACKAGES[pipewire]+=' xdg-desktop-portal-gtk'
+    [[ ${INTENTS[guitk]} == qt ]] && PACKAGES[pipewire]+=' xdg-desktop-portal-kde'
+  fi
+}
+
+function PACKAGESEL_REDIS {
+  PACKAGES[redis]='redis'
+}
+
+function PACKAGESEL_TERMINAL_MULTIPLEXER {
+  ##############################################################################
+  local -r BAKTITLE="Terminal Multiplexer"
+  local -r HELP_MSG="Choose a web server:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(screen tmux none)
+  DESCRIPS=('GNU terminal multiplexer' 'OpenBSD terminal multiplexer'
+            'Do not install a terminal multiplexer')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'tmux' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  SELECTED="$(</tmp/selection)"
+  [[ ${SELECTED} != none ]] && PACKAGES[termulti]+="${SELECTED}"
+}
+
+function PACKAGESEL_TEXT_EDITOR_ADVANCED {
+  ##############################################################################
+  local -r BAKTITLE="Advanced Text Editor"
+  local -r HELP_MSG="Choose an advanced text editor:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  SUGGESTS=(atom)
+  DESCRIPS=("GitHub'\\''s hackable text editor for the 21st Century")
+
+  if ! IS_REPO_PKG 'vscodium'; then
+    SUGGESTS+=(code)
+    DESCRIPS+=("The OSS build of Microsoft'\\''s Visual Studio Code")
+  fi
+
+  case "${INTENTS[guitk]}" in
+    gtk)
+      SUGGESTS+=(geany)
+      DESCRIPS+=('Fast and lightweight GTK-based IDE');;
+    qt)
+      SUGGESTS+=(kate notepadqq)
+      DESCRIPS+=("KDE'\\''s Advanced Text Editor"
+                 'Text and source code editor for Linux');;
+  esac
+
+  if IS_REPO_PKG 'vscodium'; then
+    SUGGESTS+=(vscodium)
+    DESCRIPS+=("The FOSS build of Microsoft'\\''s Visual Studio Code")
+  fi
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[advtext]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_TPM_SUPPORT {
+  ##############################################################################
+  local -r BAKTITLE="TPM Support"
+  ##############################################################################
+  local -i TPM_VRSN
+  local -a SUGGESTS DESCRIPS
+  local DFLTITEM
+
+  if IS_REPO_PKG 'trousers'; then
+    SUGGESTS=(tpm-1.2)
+    DESCRIPS=('Trusted Platform Module 1.2')
+  fi
+
+  SUGGESTS+=(tpm-2.0 no-tpm)
+  DESCRIPS+=('Trusted Platform Module 2.0' 'Do not install any support for TPM')
+  DFLTITEM='no-tpm'
+
+  find /sys/kernel/security -type d -name 'tpm*' > /dev/null 2>&1 && \
+    TPM_VRSN="$(< /sys/class/tpm/tpm0/tpm_version_major)"
+
+  [[ ${TPM_VRSN} -eq 0 ]] && \
+    local -r HELP_MSG='No TPM found.  Install support anyway?'
+
+  if [[ ${TPM_VRSN} -eq 1 ]]; then
+    if [[ ${SUGGESTS[*]} =~ tpm-1.2 ]]; then
+      DFLTITEM='tpm-1.2'
+      local -r HELP_MSG='Found TPM 1.2.  Install support for it?'
+    else
+      local -r HELP_MSG='Found TPM 1.2 but support is not in the repos.'
+    fi
+  fi
+
+  if [[ ${TPM_VRSN} -eq 2 ]]; then
+    DFLTITEM='tpm-2.0'
+    local -r HELP_MSG='Found TPM 2.0.  Install support for it?'
+  fi
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "${DFLTITEM}" \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  TPM_SLCT="$(< /tmp/selection)"
+
+  [[ ${TPM_SLCT} == tpm-1.2 ]] && PACKAGES[tpm]+='trousers'
+  [[ ${TPM_SLCT} == tpm-2.0 ]] && PACKAGES[tpm]+='tpm2-abrmd tpm2-tools'
+}
+
+function PACKAGESEL_WEB_SERVER {
+  ##############################################################################
+  local -r BAKTITLE="Web Server"
+  local -r HELP_MSG="Choose a web server:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS=(apache nginx)
+  DESCRIPS=('Apache web server' 'NGINX web server')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' 'minidlna' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+  PACKAGES[websrvr]="$(</tmp/selection)"
+}
+
+function PACKAGESEL_XORG {
+  ##############################################################################
+  local -r BAKTITLE="Xorg"
+  local -r HELP_MSG="Select Xorg packages"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  SUGGESTS+=(xdg-utils xdg-user-dirs xorg-server xorg-xauth xorg-xdpyinfo xorg-xhost xorg-xinit xorg-xrandr xorg-xwininfo)
+  DESCRIPS+=('Desktop integration tools'
+             'Manage user directories like ~/Desktop and ~/Music'
+             'Xorg X server'
+             'Xorg authorization settings'
+             'Xorg display information utility'
+             'Xorg Server access control'
+             'Xorg initialization program'
+             'Xorg RandR extension access'
+             'Xorg window information')
+
+  case "${INTENTS[purpose]}" in
+    desktop) SELECTNS=( on  on  on  on  on  on  on  on  on);;
+          *) SELECTNS=(off off off off off off off off off);;
+  esac
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[xorg]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_XORG_GPU {
+  LSPCIOUT="$("${BIN[lspci]}" -vnn | "${BIN[grep]}" -A2 VGA | "${BIN[grep]}" 'VGA\|Subsystem')"
+  LSPCIIDS="$("${BIN[sed]}" 's/.*\[\([0-9a-f:]\{9\}\)\].*/\1/g' <<< "${LSPCIOUT}" | "${BIN[tr]}" '\n' ':')"
+
+  while IFS=':' read -r PCIVENID PCIDEVID PCIOEMID PCISUBID; do
+    SUBSYSID="${PCIOEMID} ${PCISUBID}"
+    set +x
+    PCIVENST="$("${BIN[grep]}" "^${PCIVENID}" "${FILE[pci.ids]}" | "${BIN[cut]}" -b 7-)"
+    PCIOEMST="$("${BIN[grep]}" "^${PCIOEMID}" "${FILE[pci.ids]}" | "${BIN[cut]}" -b 7-)"
+    PCIVENLS="$("${BIN[sed]}" -n "/^${PCIVENID}/,/^[0-9a-f]\{4\}/p" "${FILE[pci.ids]}")"
+    PCIDEVLS="$("${BIN[sed]}" -n "/^\t${PCIDEVID}/,/^\t[0-9a-f]\{4\}/p" <<< "${PCIVENLS}")"
+    PCIDEVST="$("${BIN[grep]}" $'\t'"${PCIDEVID}" <<< "${PCIVENLS}" | "${BIN[sed]}" 's/\t....\s*//g')"
+    PCISUBST="$("${BIN[grep]}" "${SUBSYSID}" <<< "${PCIDEVLS}" | "${BIN[sed]}" "s/\t\t[0-9a-f ]\{9\}\s\+//g")"
+
+    case "${PCIVENID}" in
+      1002) GPU_TYPE="$(GET_GPU_TYPE_AMD "${PCIDEVST}")";;
+      8086) GPU_TYPE="$(GET_GPU_TYPE_INTEL "${PCIDEVID}")";;
+      10de) GPU_TYPE="$(GET_GPU_TYPE_NVIDIA "${PCIDEVST}")";;
+    esac
+
+    HELP_MSG="Vendor: ${PCIVENST:-Unknown}"
+    HELP_MSG+="\nSeries: ${PCIDEVST:-Unknown}"
+    HELP_MSG+="\nArchitecture: $(TRANSLATE_GPU_TYPE "${GPU_TYPE%%:*}")"
+    HELP_MSG+="\nReseller: ${PCIOEMST:-Unknown}"
+    [[ -n ${PCISUBST} ]] && HELP_MSG+="\nDevice: ${PCISUBST}"
+    HELP_MSG+='\nFeatures: '
+
+    [[ ${GPU_TYPE} =~ :va: ]] || [[ ${GPU_TYPE} =~ :vd: ]] && FEATURES='Video Acceleration'
+    [[ ${GPU_TYPE} =~ :cl: ]] && FEATURES+=', OpenCL'
+    [[ ${GPU_TYPE} =~ :vk: ]] && FEATURES+=', Vulkan'
+    [[ -z ${FEATURES} ]] && FEATURES='Basic 2D/3D'
+    HELP_MSG+="${FEATURES}"
+
+    DIALOG_MSGBOX "${TITLEBAR}" "GPU Detection" "${HELP_MSG}"
+
+    # Package nominees should be listed with an official repo package first.
+
+    case "${PACKAGES[kernel]}" in
+          linux) NVDRIVER='nvidia';;
+      linux-lts) NVDRIVER='nvidia-lts';;
+              *) NVDRIVER='nvidia-dkms';;
+    esac
+
+    case "${GPU_TYPE}" in
+                     ati0) NOMINEES=('xf86-video-vesa' 'xf86-video-mach64');;
+                     ati1) NOMINEES=('xf86-video-vesa' 'xf86-video-r128');;
+            ati[2-5]*|ts*) NOMINEES=('xf86-video-ati');;
+                 gcn[12]*) NOMINEES=('xf86-video-amdgpu' 'xf86-video-ati');;
+           gcn[34]*|rdna*) NOMINEES=('xf86-video-amdgpu');;
+               igen[0-7]*) NOMINEES=('xf86-video-intel'); VAAPIPKG='libva-intel-driver';;
+              igen[89bx]*) NOMINEES=('xf86-video-intel'); VAAPIPKG='intel-media-driver';;
+                nv00[13]*) NOMINEES=('xf86-video-vesa');;
+         nv004|nv0[1-4]0*) NOMINEES=('xf86-video-nouveau');;
+                   nv050*) NOMINEES=('xf86-video-nouveau' 'nvidia-340xx-dkms');;
+                   nv0c0*) NOMINEES=('xf86-video-nouveau' 'nvidia-390xx-dkms');;
+            nv0e0*|nv130*) NOMINEES=('xf86-video-nouveau' "${NVDRIVER}");;
+               nv[1-9]??*) NOMINEES=('xf86-video-nouveau' "${NVDRIVER}");;
+                        *) NOMINEES=('xf86-video-vesa');;
+    esac
+
+    if [[ ${#NOMINEES[@]} -eq 1 ]]; then
+      # If there's only one nominee, use that package without asking
+      XORG_PKG="${NOMINEES[0]}"
+    elif [[ ${#NOMINEES[@]} -gt 1 ]]; then
+      # If there's two nominees...
+      if ! IS_REPO_PKG "${NOMINEES[1]}"; then
+        # ...and the 2nd package isn't a repo package...
+        HELP_MSG="Your card can use ${NOMINEES[1]} but it must be built from the AUR.\n"
+        HELP_MSG+="The ${NOMINEES[0]} package will be installed instead.\n"
+        HELP_MSG+="You can build ${NOMINEES[1]} once you boot into your installation."
+        DIALOG_MSGBOX "${TITLEBAR}" "Xorg Driver Selection" "${HELP_MSG}"
+        XORG_PKG="${NOMINEES[0]}"
+      else
+        # ...and both packages are a repo packages, ask for one or the other
+        if [[ ${NOMINEES[0]} =~ amdgpu ]]; then
+          # The AMD/ATI case is the overlap between the old ATI and new AMDGPU drivers
+          HELP_MSG='You card is supported by the newer AMDGPU drivers, but\n'
+          HELP_MSG+='support is considered "experimental".  Despite the label,\n'
+          HELP_MSG+="it should be good enough for moderate non-critical use."
+          DESCRIPS=('Legacy ATI driver' 'Modern AMDGPU driver')
+          DIALOG_SINGLE_SELECT "${TITLEBAR}" "Xorg Driver Selection" 'showtags' \
+            "${NOMINEES[0]}" "${HELP_MSG}" 'NOMINEES' 'DESCRIPS'
+          XORG_PKG="$(< /tmp/selection)"
+        elif [[ ${NOMINEES[0]} =~ nouveau ]]; then
+          # The NVIDIA case is the overlap between the OSS and the PCS drivers
+          HELP_MSG='You card is supported by both the free open-source and\n'
+          HELP_MSG+='proprietary closed-source drivers. For gaming and multimedia,\n'
+          HELP_MSG+='the NVIDIA driver offer better performance.  Otherwise, the\n'
+          HELP_MSG+='FOSS driver offers better integration with GNU/Linux.'
+          DESCRIPS=('Free open-source driver' 'Proprietary closed-source driver')
+          DIALOG_SINGLE_SELECT "${TITLEBAR}" "Xorg Driver Selection" 'showtags' \
+            "${NOMINEES[0]}" "${HELP_MSG}" 'NOMINEES' 'DESCRIPS'
+          XORG_PKG="$(< /tmp/selection)"
+        fi
+      fi
+    fi
+
+    # Choose VA-API package based on the xf86-video driver selected
+
+    case "${GPU_TYPE}" in
+                           ati4*) VAAPIPKG='libva-vdpau-driver';;
+            ati5*|ts*|gcn*|rdna*) VAAPIPKG='libva-mesa-driver';;
+      igen4el|igen4ct|igen[567]*) VAAPIPKG='libva-intel-driver';;
+                     igen[89bx]*) VAAPIPKG='intel-media-driver';;
+                        nv0[5c]0) [[ ${XORG_PKG} =~ nouveua ]] && VAAPIPKG='libva-mesa-driver';;
+               nv0e0|nv1[13467]0) VAAPIPKG='libva-vdpau-driver';;
+    esac
+
+    # Nouveau has a sepcial case in which firmware is required
+    if [[ ${XORG_PKG} =~ nouveau ]]; then
+      HELP_MSG='To get video accelleration, you need to compile and\n'
+      HELP_MSG+='install nouveau-fw once you boot into your installation.'
+      DIALOG_MSGBOX "${TITLEBAR}" "Nouveau Hardware Video Acceleration" "${HELP_MSG}"
+    fi
+
+    # Install VDPAU package based on VA-API package
+    case "${GPU_TYPE}" in
+           ati[45]*|ts*|gcn*|rdna*) VDPAUPKG='mesa-vdpau';;
+      igen4el|igen4ct|igen[5-9bx]*) VDPAUPKG='libvpdbau-va-gl';;
+                          nv0[5c]0) [[ ${XORG_PKG} =~ nouveau ]] && VDPAUPKG='mesa-vdpau';;
+    esac
+
+    unset NOMINEES
+
+    case "${GPU_TYPE}" in
+            gcn[12]*) NOMINEES=('rocm-opencl-runtime');;
+      gcn[34]*|rdna*) NOMINEES=('opencl-mesa' 'opencl-amd');;
+              igen7*) NOMINEES=('intel-opencl');;
+         igen[89bx]*) NOMINEES=('intel-compute-runtime');;
+    esac
+
+    if [[ ${#NOMINEES[@]} -eq 1 ]]; then
+      # If there's only one nominee...
+      if IS_REPO_PKG "${NOMINEES[0]}"; then
+        # ...and it's a repo package, then use that without asking
+        OPNCLPKG="${NOMINEES[0]}"
+      else
+        # ...and it's not a repo package, then tell the user about it.
+        HELP_MSG="Your card can support OpenCL with ${NOMINEES[0]} but it must be built\n"
+        HELP_MSG+='from the AUR.  You can do so once you boot into your installation.'
+        DIALOG_MSGBOX "${HELP_MSG}"
+      fi
+    elif [[ ${#NOMINEES[@]} -gt 1 ]]; then
+      # If there's two nomiees...
+      if ! IS_REPO_PKG "${NOMINEES[1]}"; then
+        # ...and only 1 is a repo package, then install 1 and tell about the other
+        HELP_MSG="Your card can support OpenCL with both ${NOMINEES[0]} and\n"
+        HELP_MSG+="${NOMINEES[1]}, but ${NOMINEES[1]} must be built from the AUR."
+        HELP_MSG+='You can do so once you boot into your installation.'
+        DIALOG_MSGBOX "${HELP_MSG}"
+        OPNCLPKG="${NOMINEES[0]}"
+      else
+        # ...and both are repo packages, ask which ones to install
+        HELP_MSG='Your card can support OpenCL with the following packages:'
+        DESCRIPS=('OpenCL support for AMD/ATI Radeon mesa drivers'
+                  'OpenCL driver from the amdgpu-pro driver stack.')
+        SELECTNS=(on on on)
+        DIALOG_MULTI_SELECT "${TITLEBAR}" "OpenCL Driver Selection" 'showtags' \
+          "${HELP_MSG}" 'NOMINEES' 'DESCRIPS' 'SELECTNS'
+        OPNCLPKG="$(${BIN[xargs]} < <(</tmp/selection))"
+      fi
+    fi
+
+    unset NOMINEES
+
+    case "${GPU_TYPE}" in
+          gcn[12]*) NOMINEES=('vulkan-radeon');;
+             gcn3*) NOMINEES=('vulkan-radeon' 'vulkan-amdgpu-pro');;
+        gcn*|rdna*) NOMINEES=('amdvlk' 'vulkan-radeon' 'vulkan-amdgpu-pro');;
+      igen[789bx]*) NOMINEES=('vulkan-intel');;
+    esac
+
+    if [[ ${#NOMINEES[@]} -eq 1 ]]; then
+      if IS_REPO_PKG "${NOMINEES[0]}"; then
+        VLKN_PKG="${NOMINEES[0]}"
+      else
+        HELP_MSG="Your card can support OpenCL with ${NOMINEES[0]} but it must be built\n"
+        HELP_MSG+='from the AUR.  You can do so once you boot into your installation.'
+        DIALOG_MSGBOX "${HELP_MSG}"
+      fi
+    elif [[ ${#NOMINEES[@]} -gt 1 ]]; then
+      if ! IS_REPO_PKG "${NOMINEES[1]}"; then
+        HELP_MSG="Your card can support Vulkan with both ${NOMINEES[0]} and\n"
+        HELP_MSG+="${NOMINEES[1]}, but ${NOMINEES[1]} must be built from the AUR."
+        HELP_MSG+='You can do so once you boot into your installation.'
+        DIALOG_MSGBOX "${HELP_MSG}"
+        VLKN_PKG="${NOMINEES[0]}"
+      else
+        HELP_MSG='Your card can support Vulkan with the following packages:'
+        DESCRIPS=("AMD standalone Vulkan driver" 'Radeon Vulkan mesa driver' 'AMDGPU Pro Vulkan driver')
+        SELECTNS=(on on)
+        DIALOG_MULTI_SELECT "${TITLEBAR}" "Vulkan Driver Selection" 'showtags' \
+          "${HELP_MSG}" 'NOMINEES' 'DESCRIPS' 'SELECTNS'
+        VLKN_PKG="$(${BIN[xargs]} < <(</tmp/selection))"
+      fi
+    fi
+    PACKAGES[video]+="$("${BIN[xargs]}" <<< "${PACKAGES[video]} ${XORG_PKG}")"
+    PACKAGES[vaapi]+="$("${BIN[xargs]}" <<< "${PACKAGES[vaapi]} ${VAAPIPKG}")"
+    PACKAGES[vdpau]+="$("${BIN[xargs]}" <<< "${PACKAGES[vdpau]} ${VDPAUPKG}")"
+    PACKAGES[opencl]+="$("${BIN[xargs]}" <<< "${PACKAGES[opencl]} ${OPNCLPKG}")"
+    PACKAGES[vulkan]+="$("${BIN[xargs]}" <<< "${PACKAGES[vulkan]} ${VLKN_PKG}")"
+  done < <("${BIN[sed]}" ':a;N;$!ba;s/\([0-9a-f:]\{20\}\)\([0-9a-f:]\{20\}\):/\1\n\2/g' <<< "${LSPCIIDS}")
+
+  PACKAGES[vaapi]+=' libva-utils'
+  PACKAGES[vdpau]+=' vdpauinfo'
+  PACKAGES[opencl]+=' clinfo ocl-icd pocl spirv-tools'
+  PACKAGES[vulkan]+=' vulkan-mesa-layers vulkan-tools'
+}
+
+function PACKAGESEL_ZSH {
+  ##############################################################################
+  local -r BAKTITLE="ZSH"
+  local -r HELP_MSG="Selecting any zsh package will bring in zsh iteself."
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELECTNS
+
+  if IS_REPO_PKG 'oh-my-zsh-git'; then
+    SUGGESTS=(oh-my-zsh-git)
+    DESCRIPS=('Framework for managing your zsh configuration')
+    SELECTNS=(off)
+  fi
+
+  SUGGESTS+=(grml-zsh-config powerline powerline-fonts zsh-completions zsh-syntax-highlighting)
+  DESCRIPS+=('grml zsh setup (as found on the Arch ISO)'
+             'Provides statuslines and prompts for several applications'
+             'Patched fonts for powerline'
+             'Additional completion definitions for Zsh'
+             'fish-like syntax highlighting for zsh')
+  SELECTNS=(off off off off off)
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELECTNS' || return "${?}"
+
+  PACKAGES[zsh]="$(${BIN[xargs]} < <(</tmp/selection))"
+}
+
+function PACKAGESEL_ADDITIONAL {
+  ##############################################################################
+  local -r BAKTITLE="Additional Packages"
+  local HELP_MSG="Choose additional packages:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+
+  while IFS=$'\t' read -r INTCTGRY DSPCTGRY PACKAGE SELSTATE DESCRIBE; do
+    [ -z "${CRNT_CAT}" ] && CRNT_CAT="${INTCTGRY}" && CRNT_DSP="${DSPCTGRY}"
+    if [ "${CRNT_CAT}" != "${INTCTGRY}" ]; then
+      HELP_MSG="${CRNT_DSP}:"
+      DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+        "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'ADDLSELS' || return "${?}"
+      PACKAGES[${CRNT_CAT}]="$(${BIN[xargs]} <<< "${PACKAGES[${CRNT_CAT}]} $(</tmp/selection)")"
+      CRNT_CAT="${CATEGORY}"
+      unset SUGGESTS DESCRIPS ADDLSELS
+    fi
+    [ "${INTCTGRY}" == "END" ] && break
+    SUGGESTS+=("${PACKAGE}")
+    ADDLSELS+=("${SELSTATE}")
+    DESCRIPS+=("${DESCRIBE}")
+  done <<< "$(sed 's/\t\t*/\t/g' packages)"
+}
+
+function WIZARD_MODE {
+  UPDATE_PACMAN_MIRRORLIST
+  INSTALL_DIRECTORY
+  INTENTS_PURPOSE	# desktop, server, rescue
+  INTENTS_RUNTIME	# hardware, virtual, container
+  if [[ ${INTENTS[runtime]} != container ]]; then 
+    [[ rescue,server =~ ${INTENTS[purpose]} ]] && OPTION_ENTROPY
+    [[ ${INTENTS[runtime]} == virtual ]] && OPTION_ENTROPY
+    PACKAGESEL_KERNEL
+    PACKAGESEL_KERNEL_NONFREE_MODULES
+    PACKAGESEL_INITRAMFS_GEN
+    PACKAGESEL_BOOT_LOADER
+    PACKAGESEL_BOOT_TOOLS
+    PACKAGESEL_CPU_MICROCODE
+    PACKAGESEL_TPM_SUPPORT
+    PACKAGESEL_HARDWARE_REPORTING
+    [[ ${INTENTS[runtime]} != virtual ]] && PACKAGESEL_HARDWARE_SUPPORT
+    PACKAGESEL_DISK_MANAGEMENT
+    PACKAGESEL_NETWORK_DIAGNOSTICS
+    PACKAGESEL_NETWORK_TOOLS
+    OPTION_TIME_SYNC
+    PACKAGESEL_FILESYSTEMS_NATIVE
+    PACKAGESEL_FILESYSTEMS_OTHER
+  fi
+
+  PACKAGESEL_MANPAGES
+  PACKAGESEL_TERMINAL_MULTIPLEXER
+  OPTION_SCRIPT_DEBUGGING
+  OPTION_NEOFETCH
+  PACKAGESEL_ZSH
+  PACKAGESEL_AUR
+  PACKAGESEL_ADDITIONAL
+
+  [[ ${INTENTS[purpose]} == server ]] && INTENTS_SERVERS
+  [[ ${INTENTS[servers]} =~ email ]] && PACKAGESEL_EMAIL_SERVER
+  [[ ${INTENTS[servers]} =~ file ]] && PACKAGESEL_FILE_SERVER
+  [[ ${INTENTS[servers]} =~ lan ]] && PACKAGESEL_LAN_SERVICES
+  [[ ${INTENTS[servers]} =~ media ]] && PACKAGESEL_MEDIA_SERVER
+  [[ ${INTENTS[servers]} =~ web ]] && \
+    PACKAGESEL_WEB_SERVER && INTENTS_WEBSRVR_COMPONENTS
+  [[ ${INTENTS[servers]} =~ certbot ]] && PACKAGESEL_CERTBOT
+  [[ ${INTENTS[servers]} =~ redis ]] && PACKAGESEL_REDIS
+  [[ ${INTENTS[servers]} =~ php ]] && \
+    PACKAGESEL_PHP_WEBSRVR_IFACE && PACKAGESEL_PHP_MODULES
+  [[ ${INTENTS[servers]} =~ database ]] && PACKAGESEL_DATABASE_SERVER
+
+  PACKAGESEL_XORG
+
+  if [[ ${PACKAGES[xorg]} =~ xorg ]]; then
+    PACKAGESEL_XORG_GPU
+    INTENTS_DESKTOP
+    [[ -z ${INTENTS[guitk]} ]] && INTENTS_GUI_TOOLKIT
+    PACKAGESEL_DESKTOP
+    PACKAGESEL_DISPLAY_MANAGER
+    OPTION_PLYMOUTH
+    PACKAGESEL_GSTREAMER
+    [[ ${INTENTS[guitk]} == gtk ]] && PACKAGESEL_GVFS
+    OPTION_THUMBNAILERS
+    PACKAGESEL_OFFICE_SUITE
+    PACKAGESEL_LANGUAGE_HYPHENATION
+    PACKAGESEL_LANGUAGE_SPELLCHECK
+    PACKAGESEL_LANGUAGE_THESAURUS
+    INTENTS_BROWSERS
+    PACKAGESEL_BROWSERS
+    PACKAGESEL_EMAIL_CLIENT
+    PACKAGESEL_PIPEWIRE
+    PACKAGESEL_MEDIA_PLAYER
+    PACKAGESEL_TEXT_EDITOR_ADVANCED
+    OPTION_STEAM
+    PACKAGESEL_MISC_GUI
+  fi
+
+  # This is placed here since the choice of desktop
+  # environment can influence the choice of network manager
+  [[ ${INTENTS[runtime]} != container ]] && PACKAGESEL_NETWORK_MANAGER
+}
+
+function REVIEW_MODE {
+  ##############################################################################
+  local -r BAKTITLE='Review & Finalize'
+  local -r HELP_MSG="Look at what you'\\''ve done before you commit."
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+
+  SUGGESTS+=(intents pkgs-cat pkgs-all finalize)
+  DESCRIPS+=('Review intents'
+             'Review packages by category'
+             'Review all packages'
+             'Finalize')
+
+  "${BIN[printf]}" '#!/bin/sh\n%s %s %s --needed base %s\n' \
+    "${BIN[sudo]}" "${BIN[pacstrap]}" "${MOUNTPNT}" "${PACKAGES[*]}" > ~/ainstall.sh
+
+  while true; do
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
+      "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return "${?}"
+
+    case "$(</tmp/selection)" in
+      intents)
+        for x in "${!INTENTS[@]}"; do
+          printf "[%s]=%s\n" "${x}" "${INTENTS[${x}]}" >> /tmp/debug
+        done;;
+      pkgs-cat)
+        for x in "${!PACKAGES[@]}"; do
+          printf "[%s]=%s\n" "${x}" "${PACKAGES[${x}]}" >> /tmp/debug
+        done;;
+      pkgs-all)
+        echo "${PACKAGES[*]}" | "${BIN[xargs]}" -n1 | "${BIN[sort]}" | "${BIN[xargs]}" | "${BIN[fold]}" -sw 72 > /tmp/debug
+        ;;
+      finalize)
+        until sh ~/ainstall.sh; do
+          printf 'Installation failed.  Retry? [Y/n] '
+          read -rn1 TRYAGAIN
+          [[ ${TRYAGAIN,,} == n ]] && true || { unset TRYAGAIN; false; }
+        done
+        [[ -z ${TRYAGAIN} ]] && rm ~/ainstall.sh
+        exit
+        ;;
+    esac
+    sort -o /tmp/debug /tmp/debug
+    DIALOG_TEXT "${TITLEBAR}" "${BAKTITLE}" /tmp/debug "${MAX_HIGH}" "${MAX_WIDE}"
+    rm /tmp/debug
+  done
+}
+
+while true; do
+  WIZARD_MODE
+  REVIEW_MODE
+done

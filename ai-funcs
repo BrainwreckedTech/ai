@@ -1,0 +1,516 @@
+#!/usr/bin/env bash
+
+declare -r MEBIBYTE="$((2**20))"
+declare -r GIBIBYTE="$((2**30))"
+declare -r MEGABYTE="1000000"
+declare -r GIGABYTE="1000000000"
+declare -r -i LIST_PAD=7 MULTIPAD=14 SNGL_PAD=10 TITLEPAD=4 SLCT_PAD=6
+
+declare -A BIN FILE
+
+################################################################################
+# Hunt down the actual command being called, even if aliased
+################################################################################
+
+function GET_COMMAND {
+  for CMD in "${@}"; do
+    COMMAND="$(command -v "${CMD}")"
+    while [[ ${COMMAND:0:5} = alias ]]; do
+      COMMAND="$(command -v "$(echo "${COMMAND}" | cut -d= -f2-)")"
+    done
+    [[ -n "${COMMAND}" ]] && break
+  done
+  echo "${COMMAND}"
+}
+
+################################################################################
+# Overly-cautious verification of required binaries
+################################################################################
+
+for CMD in cut fold grep lspci printf sed stty wc; do
+  BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
+done
+
+################################################################################
+# System information
+################################################################################
+declare -r -A SYSTEM=(
+  [cpu-arch]="$(lscpu | grep 'Architecture' | sed 's/ \+//g' | cut -d: -f2)"
+  [cpu-vndr]="$(lscpu | grep 'Vendor ID' | sed 's/ \+//g' | cut -d: -f2)"
+  [cpu-bits]="$(lscpu | grep 'op-mode' | sed 's/.* //g;s/-bit//g')"
+  [fw-type]="$([ -d /sys/firmware/efi ] && echo uefi || echo bios)"
+  [fw-bits]="$([ -e /sys/firmware/efi/fw_platform_size ] && cat /sys/firmware/efi/fw_platform_size || echo 16)"
+  [gpu-uni]="$([[ $("${BIN[lspci]}" | "${BIN[grep]}" 'VGA' | "${BIN[cut]}" -d: -f1) -eq 0 ]] && echo 1 || echo 0)"
+  [ram-os]="$(for MEMORIES in /sys/devices/system/memory/memory*; do [[ $(< "${MEMORIES}/online") == 1 ]] && ((TOTALRAM+=0x$(cat /sys/devices/system/memory/block_size_bytes))); done; echo $((TOTALRAM/1024**2)))"
+)
+declare -r -i MAX_HIGH="$(( $(${BIN[stty]} size | ${BIN[cut]} -d\  -f1) - 1))"
+declare -r -i MAX_WIDE="$(( $(${BIN[stty]} size | ${BIN[cut]} -d\  -f2) * 75 / 100 - 4))"
+################################################################################
+# Find a dialog
+################################################################################
+
+[[ -n ${DISPLAY} ]] && BIN[dialog]="$(GET_COMMAND Xdialog zenity)"
+[[ -z ${BIN[dialog]} ]] && BIN[dialog]="$(GET_COMMAND dialog)"
+# This is really just a last resort.  Not recommended due to missing values on sliders.
+[[ -z ${BIN[dialog]} ]] && [[ -n ${DISPLAY} ]] && BIN[dialog]="$(GET_COMMAND kdialog)"
+
+################################################################################
+# Set constants based on what was found
+################################################################################
+
+if [[ -z ${BIN[dialog]} ]]; then
+  ERR_LIST+="CRIT: Couldn't find a dialog -- Install Xdialog, zenity, kdialog, or dialog.\n"
+else
+  case "${BIN[dialog]}" in
+       *Xdialog) GUI_WIDE=624; GUI_HIGH=560; GUI_LIST=0; DLGREDIR='2>'; export XDIALOG_NO_GMSGS=1;;
+       *kdialog) GUI_WIDE=624; GUI_HIGH=464; GUI_LIST=0; DLGREDIR='2> /dev/null 1>';;
+        *zenity) GUI_WIDE=624; GUI_HIGH=464; GUI_LIST=0; DLGREDIR='2> /dev/null 1>';;
+        *dialog) DLGREDIR='2>';;
+  esac
+fi
+
+################################################################################
+# Delay warning about failure points until calling script can find its depends
+################################################################################
+
+function CHECK_FOR_FAILURE_POINTS {
+  if [[ -n ${ERR_LIST} ]]; then
+    case "${ERR_LIST}" in
+      *CRIT:*) ATTENTION="PARTITION HELPER CANNOT CONTINUE";;
+      *WARN:*) ATTENTION="NON-CRITICAL ERRORS OCCURED";;
+    esac
+    ERRORMSG+="The following errors occured:\n\n"
+    ERRORMSG+="${ERR_LIST}"
+    if [[ -n ${BIN[dialog]} ]]; then
+      ${BIN[dialog]} --title "${TITLEBAR}" --backtitle "${ATTENTION}" --msgbox "${ERRORMSG}" 0 0
+    else
+      "${BIN[printf]}" '%s\n\n' "${ATTENTION}"
+      "${BIN[printf]}" "${ERRORMSG}"
+    fi
+    [[ ${ATTENTION} =~ "CANNOT" ]] && exit 1
+  fi
+}
+
+################################################################################
+# Convenience functions
+################################################################################
+
+function CONVERT_UNITS {
+  local -i MIBS="${1}"
+  local UNITTYPE="${2}"
+
+  BYTES=$((MIBS*MEBIBYTE))
+
+  [[ -z "${UNITTYPE}" ]] && UNITTYPE="${PHCONFIG[units]}"
+
+  case "${UNITTYPE}" in
+    si)
+      if [[ ${BYTES} -lt ${GIGABYTE} ]]; then
+        UNIT='MB'; DIVISOR="${MEGABYTE}"
+      else
+        UNIT='GB'; DIVISOR="${GIGABYTE}"
+      fi;;
+    iec)
+      if [[ ${BYTES} -lt ${GIBIBYTE} ]]; then
+        UNIT='MiB'; DIVISOR="${MEBIBYTE}"
+      else
+        UNIT='GiB'; DIVISOR="${GIBIBYTE}"
+      fi
+  esac
+
+  NUMBER=$("${BIN[printf]}" '%0.3f' "$("${BIN[awk]}" "BEGIN {print ${BYTES}/${DIVISOR}}")")
+  echo "${NUMBER:0:5}${UNIT}"
+}
+
+function MAX_LENGTH {
+  local STRING
+  local -n STRINGS="${1}"
+  local -i MAXLEN=0
+
+  for STRING in "${STRINGS[@]}"; do
+    STRING="${STRING/\'\\\'\'/\'}"
+    STRING="${STRING//	/        }"
+    [[ ${#STRING} -gt ${MAXLEN} ]] && MAXLEN="${#STRING}"
+  done
+
+  echo "${MAXLEN}"
+}
+
+function GET_PARTITION_ID {
+  local PART_ID="${1,,}" TBL_TYPE="${2,,}"
+
+  [[ ${TBL_TYPE} == mbr ]] && local -i COLUMN=1 || local -i COLUMN=2
+
+  "${BIN[grep]}" "${PART_ID}" <<< "$(GET_PARTITION_ID_LIST)" | \
+    "${BIN[awk]}" -F'\t' "{print \$${COLUMN}}"
+}
+
+function GET_PARTITION_ID_LIST {
+  local TSV_LIST
+  # MSR partitions don't have an MBR equivalent as they're only valid on GPT
+  TSV_LIST+='0x00	e3c9e316-0b5c-4db8-817d-f92df00215ae	rsvp'$'\n'
+  TSV_LIST+='0x07	ebd0a0a2-b9e5-4433-87c0-68b6b72699c7	basic'$'\n'
+  # Windows doesn't have an official "swap partition" type
+  # For MBR we use AST's sleep partition as AST has been dead since 1999
+  # and conflicts with no other current manufacturer's MBR partition type.
+  # For GPT we change the final string of the UUID to read "Paging" in hex
+  TSV_LIST+='0x18	ebd0a0a2-b9e5-4433-87c0-506167696e67	paging'$'\n'
+  TSV_LIST+='0x27	de94bba4-06d1-4d40-a16a-bfd50179d6ac	winrec'$'\n'
+  # The MBR extended parition type does not have a GPT equivalent
+  TSV_LIST+='0x0f	00000000-0000-0000-0000-000000000000	extprt'$'\n'
+  # ZFS doesn't have it's own set of GUIDs, but some OSes give it one.
+  # ZFS also doesn't officially support MBR, though it need not to.
+  # FreeBSD's designation ("FreeBSD slice" for MBR)
+  TSV_LIST+='0xa5	516e7cba-6ecf-11d6-8ff8-00022d09712b	bsdzfs'$'\n'
+  # Apple borrows Solaris' /usr GUID to denote a ZFS partition
+  TSV_LIST+='0x00	6a898cc3-1dd2-11b2-99a6-080020736631	maczfs'$'\n'
+  # MidnightBSD's designation (with no valid MBR equivalent)
+  TSV_LIST+='0x00	85d5e45d-237c-11e1-b4b3-e89a8f7fc3a7	mn-zfs'$'\n'
+  TSV_LIST+='0xef	c12a7328-f81f-11d2-ba4b-00a0c93ec93b	efisp'$'\n'
+  TSV_LIST+='0xea	bc13c2ff-59e6-4262-a352-b275fd6f7172	xbldr'$'\n'
+  TSV_LIST+='0x83	0fc63daf-8483-4772-8e79-3d69d8477de4	linux'$'\n'
+  TSV_LIST+='0x82	0657fd6d-a4ab-43c4-84e5-0933c84b4f4f	swap'$'\n'
+  # Linux does not have an official GUID for a rescue/recovery partition.
+  # For GPT, we use the Linux Reserved partition type.
+  # For MBR, we use the "Hidden Linux Filesystem" partition type which is
+  # also used for Amoeba, but that project that has been dead for 25 years.
+  TSV_LIST+='0x93	8da63339-0007-60c0-c436-083ac8230908	rescue'$'\n'
+  echo "${TSV_LIST}"
+}
+
+function TRIM {
+  local STRING="${1}"
+  # remove leading whitespace characters
+  STRING="${STRING#"${STRING%%[![:space:]]*}"}"
+  # remove trailing whitespace characters
+  STRING="${STRING%"${STRING##*[![:space:]]}"}"   
+  printf '%s' "${STRING}"
+}
+
+################################################################################
+# These functions wrap up dialog calls
+################################################################################
+
+function DIALOG_GEOMETRY_AUTO {
+  local DLG_TYPE="${1}"
+  local HELP_MSG="${2}"
+  [[ -n "${3}" ]] && local -n OPT_TAGS="${3}"
+  [[ -n "${4}" ]] && local -n OPT_DSCS="${4}"
+  local LST_HIGH="${#OPT_TAGS[@]}"
+
+  case "${DLG_TYPE}" in
+    drctry) HIGH_PAD=16;;
+     multi) WIDE_PAD=14; HIGH_PAD=6;;
+    single) WIDE_PAD=10; HIGH_PAD=6;;
+     range) WIDE_PAD=4;  HIGH_PAD=7 ; unset LST_HIGH;;
+     yesno) WIDE_PAD=4;  HIGH_PAD=4; unset LST_HIGH;;
+    msgbox) WIDE_PAD=4;  HIGH_PAD=4; unset LST_HIGH;;
+  esac
+
+  if [[ ${DLG_TYPE} == drctry ]]; then
+    case "${BIN[dialog]}" in
+      *Xdialog) echo "${GUI_WIDE}x${GUI_HIGH} ${LST_HIGH}";;
+      *kdialog) echo "--geometry ${GUI_WIDE}x${GUI_HIGH}";;
+       *zenity) echo "--width=${GUI_WIDE} --height=${GUI_HIGH}";;
+       *dialog) echo "$(( MAX_HIGH - HIGH_PAD )) 0";;
+    esac
+  else
+    case "${BIN[dialog]}" in
+      *Xdialog) echo "${GUI_WIDE}x${GUI_HIGH} ${LST_HIGH}";;
+      *kdialog) echo "--geometry ${GUI_WIDE}x${GUI_HIGH}";;
+       *zenity) echo "--width=${GUI_WIDE} --height=${GUI_HIGH}";;
+       *dialog)
+          while read -r HELPLINE; do
+            HM_ARRAY+=("${HELPLINE}")
+          done <<< "$("${BIN[printf]}" '%b\n' "${HELP_MSG}")"
+          MSG_HIGH="$(${BIN[printf]} '%b\n' "${HELP_MSG}" | "${BIN[fold]}" -sw $((MAX_WIDE - 4)) | "${BIN[wc]}" -l)"
+          MSG_WIDE="$(( $(MAX_LENGTH 'HM_ARRAY') + TITLEPAD ))"
+          [[ ${MSG_WIDE} -gt ${MAX_WIDE} ]] && MSG_WIDE="${MAX_WIDE}"
+          OPT_WIDE="$(( $(MAX_LENGTH 'OPT_TAGS') + $(MAX_LENGTH 'OPT_DSCS') + WIDE_PAD ))"
+          DLG_HIGH="$((LST_HIGH + MSG_HIGH + HIGH_PAD))"
+          if [[ ${DLG_HIGH} -gt $((MAX_HIGH - HIGH_PAD)) ]]; then
+            REDUCE=$((DLG_HIGH - MAX_HIGH + HIGH_PAD))
+            DLG_HIGH=$((DLG_HIGH - REDUCE))
+            LST_HIGH=$((LST_HIGH - REDUCE))
+          fi
+          [[ ${MSG_WIDE} -gt ${OPT_WIDE} ]] && DLG_WIDE="${MSG_WIDE}" || DLG_WIDE="${OPT_WIDE}"
+          echo "${DLG_HIGH} ${DLG_WIDE} ${LST_HIGH}";;
+    esac
+  fi
+}
+
+function DIALOG_GEOMETRY {
+  local -i DLG_HIGH="${1}" DLG_WIDE="${2}" LST_HIGH="${3}"
+
+  if [[ ${LST_HIGH} -gt 0 ]]; then
+    if [[ -n ${GUI_LIST} ]]; then
+      DLG_LIST="${GUI_LIST}"
+    else
+      if [[ ${DLG_HIGH} -gt ${MAX_HIGH} ]]; then
+        REDUCE=$((DLG_HIGH - MAX_HIGH))
+        DLG_HIGH=$((DLG_HIGH - REDUCE))
+        LST_HIGH=$((LST_HIGH - REDUCE))
+      else
+        DLG_LIST="${LST_HIGH}"
+      fi
+    fi
+  fi
+
+
+  case "${BIN[dialog]}" in
+    *Xdialog) echo "${GUI_WIDE}x${GUI_HIGH} ${DLG_LIST}";;
+    *kdialog) echo "--geometry ${GUI_WIDE}x${GUI_HIGH}";;
+     *zenity) echo "--width=${GUI_WIDE} --height=${GUI_HIGH}";;
+     *dialog) echo "${DLG_HIGH} ${DLG_WIDE} ${DLG_LIST}";;
+  esac
+}
+
+function DIALOG_MAIN_CALL {
+  COMMAND="${BIN[dialog]} "
+  [[ ${BIN[dialog]} =~ Xdialog ]] && COMMAND+="--wrap --left "
+  echo "${COMMAND}"
+}
+
+function DIALOG_TITLES {
+  local MAIN_TTL="${1}" BACK_TTL="${2}"
+
+  case "${BIN[dialog]}" in
+    *Xdialog) echo "--title '${MAIN_TTL}' --backtitle '${BACK_TTL}'";;
+    *kdialog) echo "--title '${MAIN_TTL} -- ${BACK_TTL}'";;
+     *zenity) echo "--title='${MAIN_TTL} -- ${BACK_TTL}'";;
+     *dialog) echo "--title ' ${BACK_TTL^^} ' --backtitle '${MAIN_TTL^^}'";;
+  esac
+}
+
+function DIALOG_DIRECTORY_SELECT {
+  local MAIN_TTL="${1}"
+  local BACK_TTL="${2}"
+  local HELP_MSG="${3}"
+
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="--dselect '${HELP_MSG}' "
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'drctry' "${HELP_MSG}" '' '') "
+  for (( PC=0 ; PC < ${#ITM_TAGS[@]} ; PC++ )); do
+    [[ ${BIN[dialog]} =~ zenity ]] && COMMAND+=" '${ITMSLCTS[${PC}]}'"
+    COMMAND+=" '${ITM_TAGS[${PC}]}' '${ITM_OPTS[${PC}]}'"
+    [[ ${BIN[dialog]} =~ zenity ]] || COMMAND+=" '${ITMSLCTS[${PC}]}'"
+  done
+
+  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  eval "${COMMAND} ${DLGREDIR} /tmp/selection"
+
+}
+
+function DIALOG_MULTI_SELECT {
+  local MAIN_TTL="${1}"
+  local BACK_TTL="${2}"
+  [[ ${3} == hidetags ]] && local HIDETAGS='--no-tags'
+  local HELP_MSG="${4}"
+  local -n ITM_TAGS="${5}"
+  local -n ITM_OPTS="${6}"
+  local -n ITMSLCTS="${7}"
+  local SWITCHES
+
+  [[ ${BIN[dialog]} =~ zenity ]] && SWITCHES+='--list '
+  if [[ ${BIN[dialog]} =~ /dialog ]] || [[ ${BIN[dialog]} =~ Xdialog ]]; then
+    SWITCHES+='--separator " " '
+    [[ -n ${HIDETAGS} ]] && SWITCHES+='--no-tags '
+  fi
+  SWITCHES+='--checklist '
+  if [[ ${BIN[dialog]} =~ zenity ]]; then
+    SWITCHES+="--column='' --column='' --column='' "
+    [[ -n ${HIDETAGS} ]] && SWITCHES+='--hide-column=2 '
+    SWITCHES+='--text='
+  fi
+
+  if [[ ${BIN[dialog]} =~ zenity ]]; then
+    for (( LC=0 ; LC++ ; LC < ${#ITMSLCTS[@]} )); do
+      [[ ${ITMSLCTS[${LC}]} == on ]]  && ITMSLCTS[${LC}]='TRUE'
+      [[ ${ITMSLCTS[${LC}]} == off ]] && ITMSLCTS[${LC}]='FALSE'
+    done
+  fi
+
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="${SWITCHES}'${HELP_MSG}' "
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'multi' "${HELP_MSG}" 'ITM_TAGS' 'ITM_OPTS') "
+  for (( PC=0 ; PC < ${#ITM_TAGS[@]} ; PC++ )); do
+    [[ ${BIN[dialog]} =~ zenity ]] && COMMAND+=" '${ITMSLCTS[${PC}]}'"
+    COMMAND+=" '${ITM_TAGS[${PC}]}' '${ITM_OPTS[${PC}]}'"
+    [[ ${BIN[dialog]} =~ zenity ]] || COMMAND+=" '${ITMSLCTS[${PC}]}'"
+  done
+
+  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  eval "${COMMAND} ${DLGREDIR} /tmp/selection"
+}
+
+function DIALOG_INPUT {
+  local MAIN_TTL="${1}"
+  local BACK_TTL="${2}"
+  local HELP_MSG="${3}"
+  local -i DLG_HIGH="${4}"
+  local -i DLG_WIDE="${5}"
+  local INIT_TXT="${6}"
+  local D_SWITCH='--inputbox '
+
+  [[ ${BIN[dialog]} =~ zenity ]] && D_SWITCH='--entry --text='
+
+  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="${D_SWITCH}'${HELP_MSG}' "
+  COMMAND+="$(DIALOG_GEOMETRY "${DLG_HIGH}" "${DLG_WIDE}" '-1') '${INIT_TXT}'"
+  eval "${COMMAND} ${DLGREDIR} /tmp/selection"
+  return ${?}
+}
+
+function DIALOG_MSGBOX {
+  local MAIN_TTL="${1}"
+  local BACK_TTL="${2}"
+  local HELP_MSG="${3}"
+  local -i DLG_HIGH="${4}"
+  local -i DLG_WIDE="${5}"
+  local D_SWITCH='--msgbox '
+
+  [[ ${BIN[dialog]} =~ zenity ]] && D_SWITCH='--info --text='
+
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="${D_SWITCH}'${HELP_MSG}' "
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'msgbox' "${HELP_MSG}" '' '') "
+  eval "${COMMAND}"
+}
+
+function DIALOG_RANGE {
+  local MAIN_TTL=${1}
+  local BACK_TTL=${2}
+  local HELP_MSG="${3}"
+  local -i RANGEMIN="${4}"
+  local -i RANGEMAX="${5}"
+  local -i RANGESET="${6}"
+  local D_SWITCH='--rangebox '
+
+  case "${BIN[dialog]}" in
+    *kdialog) D_SWITCH='--slider ';;
+     *zenity) D_SWITCH='--scale --text=';;
+  esac
+
+  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="${D_SWITCH}'${HELP_MSG}' " \
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'range' "${HELP_MSG}" '' '') "
+  case "${BIN[dialog]}" in
+    *Xdialog) COMMAND+="${RANGEMIN} ${RANGEMAX} ${RANGESET}";;
+    *kdialog) COMMAND+="${RANGEMIN} ${RANGEMAX} 10";;
+     *zenity) COMMAND+="--min-value=${RANGEMIN} --max-value=${RANGEMAX} --value=${RANGESET}";;
+     *dialog) COMMAND+="${RANGEMIN} ${RANGEMAX} ${RANGESET}";;
+  esac
+  #kdialog --slider bug that switches the return value between OK and Cancel
+  if [[ ${BIN[dialog]} =~ kdialog ]]; then
+    eval "${COMMAND} ${DLGREDIR} /tmp/selection" && return 1 || return 0
+  else
+    eval "${COMMAND} ${DLGREDIR} /tmp/selection"; return ${?}
+  fi
+}
+
+function DIALOG_TEXT {
+  local MAIN_TTL="${1}"
+  local BACK_TTL="${2}"
+  local TEXTFILE="${3}"
+  local -i DLG_HIGH="${4}"
+  local -i DLG_WIDE="${5}"
+  local D_SWITCH='--textbox '
+
+  [[ ${BIN[dialog]} =~ zenity ]] && D_SWITCH='--text-info --filename='
+
+  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="${D_SWITCH}'${TEXTFILE}' "
+  COMMAND+="$(DIALOG_GEOMETRY "${DLG_HIGH}" "${DLG_WIDE}" '')"
+  eval "${COMMAND}"
+}
+
+function DIALOG_YESNO {
+  local MAIN_TTL="${1}"
+  local BACK_TTL="${2}"
+  local HELP_MSG="${3}"
+  local D_SWITCH='--yesno '
+
+  [[ ${BIN[dialog]} =~ zenity ]] && D_SWITCH='--question --text='
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="${D_SWITCH}'${HELP_MSG}' "
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'yesno' "${HELP_MSG}" '' '') "
+  eval "${COMMAND}"
+  return ${?}
+}
+
+function DIALOG_SINGLE_SELECT {
+  local MAIN_TTL="${1}"
+  local BACK_TTL="${2}"
+  [[ ${3} == hidetags ]] && local HIDETAGS='--no-tags'
+  local DFLTITEM="${4}"
+  local HELP_MSG="${5}"
+  local -n ITEMTAGS="${6}"
+  local -n ITEMOPTS="${7}"
+  local -a SELSTATE
+  local SWITCHES
+
+  #  dialog: radiolist requires a click to change selection
+  # Xdialog: menulist caret always starts on first item even though deafult-item
+  #          is correctly highlighed and selected on initial show
+  # kdialog: radiolist and menu always hides tags
+  #  zenity: always uses a table format, radiolist requires a click to select, menu has no default
+
+  # Therefore, the solution is:
+
+  #  dialog: Always use menu -- selection follows caret and tags can be show/hidden at will
+  # Xdialog: Always use radiolist -- selection follows caret and tags can be show/hidden at will
+  # kdialog: Always use radiolist -- loses tags
+  #  zenity: Always use radiolist to retain default selections at the cost of keyboard navigation
+
+  [[ -z ${DFLTITEM} ]] && DFLTITEM="${ITEMTAGS[0]}"
+
+  case "${BIN[dialog]}" in
+    *Xdialog)
+      SWITCHES="${HIDETAGS} --radiolist ";;
+    *kdialog)
+      SWITCHES="--radiolist ";;
+    *zenity)
+      SWITCHES='--list --radiolist --column='' --column='' --column='' '
+      [[ -n ${HIDETAGS} ]] && SWITCHES+='--hide-column=2 '
+      SWITCHES+='--text=';;
+    *dialog)
+      SWITCHES="${HIDETAGS} --default-item '${DFLTITEM}' --menu ";;
+  esac
+
+  if [[ ${BIN[dialog]} =~ zenity ]]; then
+    SELECTED='TRUE'; UNSELECT='FALSE'
+  else
+    SELECTED='on'; UNSELECT='off'
+  fi
+
+  if [[ ${SWITCHES} =~ radiolist ]]; then
+    for CHOICE in "${ITEMTAGS[@]}"; do
+      [[ ${CHOICE} == "${DFLTITEM}" ]] && SELSTATE+=("${SELECTED}") || SELSTATE+=("${UNSELECT}")
+    done
+    [[ -z ${DFLTITEM} ]] && SELSTATE[0]="${SELECTED}"
+  fi
+
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="${SWITCHES}'${HELP_MSG}' "
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'single' "${HELP_MSG}" 'ITEMTAGS' 'ITEMOPTS') "
+  for (( PC=0 ; PC < ${#ITEMTAGS[@]} ; PC++ )); do
+    [[ ${BIN[dialog]} =~ zenity ]] && COMMAND+=" '${SELSTATE[${PC}]}'"
+    COMMAND+=" '${ITEMTAGS[${PC}]}' '${ITEMOPTS[${PC}]}'"
+    [[ ${BIN[dialog]} =~ Xdialog ]] || [[ ${BIN[dialog]} =~ kdialog ]] && COMMAND+=" '${SELSTATE[${PC}]}'"
+  done
+
+  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  echo "${COMMAND} ${DLGREDIR} /tmp/selection" >> /tmp/aipdebug
+  eval "${COMMAND} ${DLGREDIR} /tmp/selection"
+}
