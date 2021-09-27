@@ -1,4 +1,4 @@
-# AI (Arch Installer)
+# AI (Assisted Installer)
 AI is a set of scripts utilizing (X)dialog tp help the user set up a new system.
 
 The process is divided into four parts.  Each part is independent of the other, so you can omit the use of any assistance you don't want.
