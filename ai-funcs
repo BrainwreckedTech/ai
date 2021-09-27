@@ -217,6 +217,7 @@ function DIALOG_GEOMETRY_AUTO {
 
   case "${DLG_TYPE}" in
     drctry) HIGH_PAD=16;;
+      file) HIGH_PAD=16;;
      multi) WIDE_PAD=14; HIGH_PAD=6;;
     single) WIDE_PAD=10; HIGH_PAD=6;;
      range) WIDE_PAD=4;  HIGH_PAD=7 ; unset LST_HIGH;;
@@ -316,7 +317,25 @@ function DIALOG_DIRECTORY_SELECT {
 
   rm /tmp/selection 2> /dev/null; touch /tmp/selection
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
+}
 
+function DIALOG_FILE_SELECT {
+  local MAIN_TTL="${1}"
+  local BACK_TTL="${2}"
+  local FILEPATH="${3}"
+
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="--fselect '${FILEPATH}' "
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'file' "${FILEPATH}" '' '') "
+  for (( PC=0 ; PC < ${#ITM_TAGS[@]} ; PC++ )); do
+    [[ ${BIN[dialog]} =~ zenity ]] && COMMAND+=" '${ITMSLCTS[${PC}]}'"
+    COMMAND+=" '${ITM_TAGS[${PC}]}' '${ITM_OPTS[${PC}]}'"
+    [[ ${BIN[dialog]} =~ zenity ]] || COMMAND+=" '${ITMSLCTS[${PC}]}'"
+  done
+
+  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  eval "${COMMAND} ${DLGREDIR} /tmp/selection"
 }
 
 function DIALOG_MULTI_SELECT {
