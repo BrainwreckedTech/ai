@@ -1,0 +1,717 @@
+#!/usr/bin/env bash
+
+source ai-funcs
+
+################################################################################
+# Here are more global variables to share amongst functions
+################################################################################
+declare -r TITLEBAR="AI CONFIGURATION"
+declare -r OSCHROOT='/test'
+
+################################################################################
+# Overly-cautious verification of required binaries
+################################################################################
+
+for CMD in cat cp date genfstab head ip ln readlink rename stat tail touch; do
+  BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
+done
+
+declare -r SCRSTIME="$(date +%s)"
+
+CHECK_FOR_FAILURE_POINTS
+
+function USE_PRIVILEGE {
+  GET_PRIVILEGE && "${BIN[sudo]}" "${@}" || return 1
+}
+
+function CONFIGURE_DEFAULT_EDITOR {
+  CFG_FILE="${OSCHROOT}/etc/profile.d/editor.sh"
+  CFG_ITEM="export EDITOR"
+  ##############################################################################
+  local BAKTITLE="Default Console Text Editor"
+  local HELP_MSG="Select your default console text editor:"
+  ##############################################################################
+  local -a SUGGESTS
+  local SELECTED
+  local PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)"
+
+  KNOWNS+=(dte:/usr/bin/dte   e3:/usr/bin/e3       helix:/usr/bin/helix)
+  KNOWNS+=(helix:/usr/bin/hx  kakoune:/usr/bin/kak mcedit:/usr/bin/mcedit)
+  KNOWNS+=(nano:/usr/bin/nano neovim:/usr/bin/nvim vi:/usr/bin/vi)
+  KNOWNS+=(vim:/usr/bin/vim   vis:/usr/bin/vis)
+
+  for KNOWN in "${KNOWNS[@]}"; do
+    if [[ -e "${OSCHROOT}/${KNOWN#*:}" ]]; then
+      SUGGESTS+=("${KNOWN%:*}"); DESCRIPS+=("${KNOWN#*:}")
+    fi
+  done
+  
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
+  SELECTED="$(</tmp/selection)"
+
+  USE_PRIVILEGE sh -c "echo 'export EDITOR=${SELECTED}' > '${CFG_FILE}'"
+}
+
+function CONFIGURE_FSTAB {
+  local CFG_FILE="${OSCHROOT}/etc/fstab"
+  ##############################################################################
+  local BAKTITLE="fstab"
+  local HELP_MSG="Copy ${HOME}/fstab to ${CFG_FILE}?"
+  ##############################################################################
+  local SKIP_GEN=false
+  local FSTMTIME="$("${BIN[stat]}" -c %Y "${CFG_FILE}")"
+
+  if [[ ${FSTMTIME} -gt ${SCRSTIME} ]]; then
+    WARNING="${CFG_FILE} has already been written to.  Overwrite it?"
+    DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${WARNING}" || return 1
+  fi
+  
+  if [[ -e "${HOME}/fstab" ]]; then
+    if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+      USE_PRIVILEGE sh -c "'${BIN[cat]}' '${HOME}/fstab' >> '${CFG_FILE}'"
+      SKIP_GEN=true
+    fi
+  fi
+  
+  ${SKIP_GEN} || USE_PRIVILEGE sh -c "'${BIN[genfstab]}' -L '${OSCHROOT}' | \
+    ${BIN[sed]} 's/^#.*//g;s/\s\+/\t/g;s/\([0-9]\)\t\([0-9]\)$/\1 \2/g' | \
+    ${BIN[sed]} '/^$/d' >> '${OSCHROOT}/etc/fstab'"
+}
+
+function CONFIGURE_HOSTNAME {
+  local CFG_FILE="${OSCHROOT}/etc/hostname"
+  ##############################################################################
+  local BAKTITLE="Hostname"
+  local HELP_MSG="Set your hostname"
+  ##############################################################################
+  DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "$(<"${CFG_FILE}")"
+  SELECTED=$(</tmp/selection)
+  USE_PRIVILEGE sh -c "echo '${SELECTED}' > '${CFG_FILE}'"
+}
+
+function CONFIGURE_HOSTS {
+  local CFG_FILE="${OSCHROOT}/etc/hosts"
+  local CFG_ITEM="$(<"${CFG_FILE/hosts/hostname}")"
+  ##############################################################################
+  local BAKTITLE="Hostname"
+  local HELP_MSG="Set your hostname"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+  local LOCAL_IP="$("${BIN[ip]}" route get 1 | "${BIN[head]}" -1 | "${BIN[sed]}" 's/.*src \([0-9.]\+\).*/\1/g')"
+  local LOCAL_DN="$("${BIN[grep]}" 'Domains=' "${OSCHROOT}/etc/systemd/resolved.conf" | "${BIN[cut]}" -d= -f2)"
+  local LOCAL_HN="${CFG_ITEM}"
+
+  SUGGESTS=('127.0.1.1' "${LOCAL_IP}")
+  DESCRIPS=('This computer uses a dynamic IP address' 'This computer uses a static IP address')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' '127.0.0.1' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS'
+  SELECTED="$(</tmp/selection)"
+
+  USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
+
+  if ${BIN[grep]} -q '127.0.0.1\s\+localhost' "${CFG_FILE}"; then
+    USE_PRIVILEGE "${BIN[sed]}" "s/.*127\.0\.0\.1.*/127.0.0.1\tlocalhost.${LOCAL_DN}\tlocalhost" "${CFG_FILE}"
+  else
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%s\t%s\t%s\n' '127.0.0.1' 'localhost.${LOCAL_DN}' 'localhost' >> '${CFG_FILE}'"
+  fi
+  if ${BIN[grep]} -q '::1\s\+localhost' "${CFG_FILE}"; then
+    USE_PRIVILEGE "${BIN[sed]}" "s/.*::1.*/::1\t\tlocalhost.${LOCAL_DN}\tlocalhost" "${CFG_FILE}"
+  else
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%s\t\t%s\t%s\n' '::1' 'localhost.${LOCAL_DN}' 'localhost' >> '${CFG_FILE}'"
+  fi
+  if ${BIN[grep]} -q "${LOCAL_HN}" "${CFG_FILE}"; then
+    USE_PRIVILEGE "${BIN[sed]}" "s/.*${LOCAL_HN}.*/${SELECTED}\t${LOCAL_HN}.${LOCAL_DN}\t${LOCAL_HN}" "${CFG_FILE}"
+  else
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%s\t%s\t%s\n' '${SELECTED}' '${LOCAL_HN}.${LOCAL_DN}' '${LOCAL_HN}' >> '${CFG_FILE}'"
+  fi
+}
+
+function CONFIGURE_INITRAMFS_COMPRESSION {
+  local CFG_FILE="${OSCHROOT}/etc/mkinitcpio.conf"
+  [[ -e "${CFG_FILE}" ]] || return 0
+  local CFG_ITEM="COMPRESSION"
+  ##############################################################################
+  local BAKTITLE="InitRAMFS Compression"
+  local HELP_MSG="Select InitRAMFS compression:"
+  ##############################################################################
+  local -a SUGGESTS
+  local PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d'"' -f2)"
+
+  [[ -z ${PREV_CFG} ]] && PREV_CFG=zstd
+
+  SUGGESTS=(cat bzip2 gzip lz4 lzma lzop xz zstd)
+  
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${PREV_CFG}" \
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
+  SELECTED="$(</tmp/selection)"
+
+  # Set all COMPRESSION options to be commented out
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*${CFG_ITEM}=\"\([a-z0-9]\+\)\"/#${CFG_ITEM}=\"\1\"/g" "${CFG_FILE}"
+ 
+  if "${BIN[grep]}" -q "${CFG_ITEM}=\"${SELECTED}\"" "${CFG_FILE}"; then
+    # If a COMPRESSION option is found commented out, un-comment it
+    USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*#\s*${CFG_ITEM}=\"${SELECTED}\"/${CFG_ITEM}=\"${SELECTED}\"/g" "${CFG_FILE}"
+  else
+    # Find the First Commented-Out Compression OPTion
+    FCOCOPT="$("${BIN[grep]}" "^\s*#\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[head]}" -1)"
+    # Inset a new compression option above that one
+    USE_PRIVILEGE "${BIN[sed]}" -i "s/${FCOCOPT}/${CFG_ITEM}=\"${SELECTED}\"\n${FCOCOPT}/g" "${CFG_FILE}"
+  fi
+}
+
+function CONFIGURE_LOCAL_DOMAIN {
+  local CFG_FILE="${OSCHROOT}/etc/systemd/resolved.conf"
+  local CFG_ITEM="Domains"
+  #######################################################################
+  local BAKTITLE="Local Domain Name"
+  local HELP_MSG="Enter this computer'\\''s local domain:"
+  #######################################################################
+  local PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)"
+
+  DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "${PREV_CFG}"
+  SELECTED=$(</tmp/selection)
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}/g" "${CFG_FILE}"
+}
+
+function CONFIGURE_LOCALE_AVAILABILITY {
+  CFG_FILE="${OSCHROOT}/etc/locale.gen"
+  ##############################################################################
+  local BAKTITLE="Language Availability"
+  local HELP_MSG="Select the languages you would like to use:"
+  ##############################################################################
+  local -a SUGGESTS SELSTATE
+  local LANGUAGE LOCALE SELECTED
+
+  SEL_LANG="$("${BIN[grep]}" -v '^\s*#' "${CFG_FILE}" | "${BIN[sed]}" 's/^\s*\([a-z]\{2,3\}\)_.*\.UTF-8 UTF-8.*/\1/g;' | "${BIN[sort]}" -u)"
+  
+  while read -r LANGUAGE; do
+    SUGGESTS+=("${LANGUAGE}")
+    [[ ${SEL_LANG} =~ ${LANGUAGE} ]] && SELSTATE+=(on) || SELSTATE+=(off)
+  done <<< "$("${BIN[grep]}" '\.UTF-8 UTF-8' "${CFG_FILE}" | "${BIN[sed]}" 's/^\s*#*\s*\([a-z]\{2,3\}\)_.*\.UTF-8 UTF-8.*/\1/g;' | ${BIN[sort]} -u )"
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE'
+  SELECTED="$(</tmp/selection)"
+  SELECTED"${SELECTED# }"
+  SELECTED"${SELECTED% }"
+
+  ##############################################################################
+  local BAKTITLE="Locale Availability"
+  local HELP_MSG="Select the locales you would like to use:"
+  ##############################################################################
+  unset SUGGESTS SELSTATE
+
+  while read -r LOCALE; do
+    [[ ${LOCALE:0:1} == '#' ]] && SELSTATE+=(off) || SELSATE+=(on)
+    SUGGESTS+=("${LOCALE#'#'}")
+  done <<< "$("${BIN[grep]}" "^\#*\(${SELECTED// /\\|}\).*\.UTF-8 UTF-8" "${CFG_FILE}" | "${BIN[sed]}" 's/\.UTF-8 UTF-8.*//g;')"
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE'
+  SELECTED="$(</tmp/selection)"
+
+  for LOCALE in "${SUGGESTS[@]}"; do
+    if [[ ${SELECTED} =~ ${LOCALE} ]]; then
+      USE_PRIVILEGE "${BIN[sed]}" -i "s/^#${LOCALE}.UTF-8 UTF-8/${LOCALE}.UTF-8 UTF-8/g" "${CFG_FILE}"
+    else
+      USE_PRIVILEGE "${BIN[sed]}" -i "s/^${LOCALE}.UTF-8 UTF-8/#${LOCALE}.UTF-8 UTF-8/g" "${CFG_FILE}"
+    fi
+  done
+}
+
+function CONFIGURE_LOCALE_COLLATION {
+  local CFG_FILE="${OSCHROOT}/etc/locale.conf"
+  local CFG_ITEM="LC_COLLATE"
+  ##############################################################################
+  local BAKTITLE="Locale Collation"
+  local HELP_MSG="Select your sorting style:"
+  ##############################################################################
+  local -a SUGGESTS SELSTATE
+  local SELECTED
+  
+  SUGGESTS=(POSIX C "$("${BIN[grep]}" 'LANG=' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)")
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' 'POSIX' \
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
+  SELECTED=$(</tmp/selection)
+
+  USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
+
+  if "${BIN[grep]}" -q "${CFG_ITEM}=" "${CFG_FILE}"; then
+    USE_PRIVILEGE "${BIN[sed]}" -i "s/.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}/g" "${CFG_FILE}"
+  else
+    USE_PRIVILEGE sh -c "echo '${CFG_ITEM}=${SELECTED}' >> '${CFG_FILE}'"
+  fi
+
+  USE_PRIVILEGE "${BIN[sort]}" -o "${CFG_FILE}" "${CFG_FILE}"
+}
+
+function CONFIGURE_LOCALE_LANGUAGE {
+  local CFG_FILE="${OSCHROOT}/etc/locale.conf"
+  ##############################################################################
+  BAKTITLE="Primary Locale"
+  HELP_MSG="Select your primary locale:"
+  ##############################################################################
+  local -a SUGGESTS SELSTATE
+  local LOCALE SELECTED
+
+  while read -r LOCALE; do
+    SUGGESTS+=("${LOCALE}")
+  done <<< "$("${BIN[grep]}" -v '\s*#' "${CFG_FILE/conf/gen}" | "${BIN[sed]}" 's/\.UTF-8 UTF-8.*//g;')"
+
+  if [[ ${#SUGGESTS[@]} -gt 1 ]]; then
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
+      "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
+    SELECTED="$(</tmp/selection)"
+  else
+    SELECTED="${SUGGESTS[0]}"
+  fi
+
+  USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
+  
+  for CFG_ITEM in LANG LC_ADDRESS LC_CTYPE LC_IDENTIFICATION LC_MEASUREMENT LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER LC_TELEPHONE LC_TIME; do
+    if "${BIN[grep]}" -q "${CFG_ITEM}" "${CFG_FILE}"; then
+      USE_PRIVILEGE "${BIN[sed]}" -i "s/.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}.UTF-8/g" "${CFG_FILE}"
+    else
+      USE_PRIVILEGE sh -c "echo '${CFG_ITEM}=${SELECTED}.UTF-8' >> '${CFG_FILE}'"
+    fi
+  done
+  if "${BIN[grep]}" -q 'LANGUAGE=' "${CFG_FILE}"; then
+    USE_PRIVILEGE "${BIN[sed]}" -i "s/.*LANGUAGE=.*/LANGUAGE=${SELECTED}/g" "${CFG_FILE}"
+  else
+    USE_PRIVILEGE sh -c "echo 'LANGUAGE=${SELECTED}' >> '${CFG_FILE}'"
+  fi
+
+  USE_PRIVILEGE "${BIN[sort]}" -o "${CFG_FILE}" "${CFG_FILE}"
+}
+
+function CONFIGURE_LOCALE_MESSAGES {
+  local CFG_FILE="${OSCHROOT}/etc/locale.conf"
+  local CFG_ITEM="LC_MESSAGE"
+  ##############################################################################
+  local BAKTITLE="Locale Messages"
+  local HELP_MSG="Select your message style:"
+  ##############################################################################
+  local -a SUGGESTS SELSTATE
+  local SELECTED
+
+  SUGGESTS=(POSIX C "$("${BIN[grep]}" 'LANG=' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)")
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' 'C' \
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 
+  SELECTED=$(</tmp/selection)
+
+  USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
+
+  if "${BIN[grep]}" -q "${CFG_ITEM}=" "${CFG_FILE}"; then
+    USE_PRIVILEGE "${BIN[sed]}" -i "s/.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}/g" "${CFG_FILE}"
+  else
+    USE_PRIVILEGE sh -c "echo '${CFG_ITEM}=${SELECTED}' >> '${CFG_FILE}'"
+  fi
+
+  USE_PRIVILEGE "${BIN[sort]}" -o "${CFG_FILE}" "${CFG_FILE}"
+}
+
+function CONFIGURE_NANORC_COLORS {
+  local CFG_FILE="${OSCHROOT}/etc/nanorc"
+  [[ -e "${CFG_FILE}" ]] || return 0
+  ##############################################################################
+  local BAKTITLE="NanoRC Colors"
+  local HELP_MSG="Enable Nano'\\''s example system-wide color scheme?"
+  ##############################################################################
+  local CLRLINES="$("${BIN[grep]}" '^\s*#*\s*set [a-z]\+color [a-z,]\+' "${CFG_FILE}" | "${BIN[wc]}" -l)"
+  local SWCOLORS="$("${BIN[grep]}" '^\s*#*\s*set [a-z]\+color [a-z,]\+' "${CFG_FILE}" | "${BIN[head]}" -$((CLRLINES/2)))"
+  local RTCOLORS="$("${BIN[grep]}" '^\s*#*\s*set [a-z]\+color [a-z,]\+' "${CFG_FILE}" | "${BIN[tail]}" -$((CLRLINES/2)))"
+  
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    if [[ ${SWCOLORS} =~ '#' ]]; then
+      ESCOLORS="$("${BIN[sed]}" 's/^\s*#*\s*set/set/g' <<< "${SWCOLORS}")"
+      ESCOLORS="${ESCOLORS//$'\n'/\\n}"
+      SWCOLORS="${SWCOLORS//$'\n'/\\n}"
+      USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s/${SWCOLORS}/${ESCOLORS}/g" "${CFG_FILE}"
+    fi
+  else
+    if ! [[ ${SWCOLORS} =~ '#' ]]; then
+      USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;s/^\s*set \([a-z]\+color [a-z,]\+\)/set \1/g' "${CFG_FILE}"
+    fi
+  fi
+
+  ##############################################################################
+  local HELP_MSG="Enable Nano'\\''s example color scheme for root?"
+  ##############################################################################
+
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    USE_PRIVILEGE sh -c "echo '${RTCOLORS//# /}' > '${OSCHROOT}/root/.nanorc'"
+  else
+    USE_PRIVILEGE "${BIN[rm]}" "${OSCHROOT}/root/.nanorc"
+  fi
+}
+
+function CONFIGURE_POLICYKIT_ROOTPW {
+  local CFG_FILE="${OSCHROOT}/etc/polkit-1/rules.d/49-rootpw_global.rules"
+  [[ -e "${CFG_FILE%\/*}" ]] || return 0
+  ##############################################################################
+  local BAKTITLE="Root Password for PolicyKit like Sudo"
+  local HELP_MSG="Authenticate Admins by prompting for the root password?"
+  ##############################################################################
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    USE_PRIVILEGE sh -c "cat <<- ENDOFSCRIPT > '${CFG_FILE}'
+		// Always authenticate Admins by prompting for the root password
+		// similar to the rootpw option in sudo
+		
+		polkit.addAdminRule(function(action, subject) {
+		    return ['unix-user:root'];
+		});
+		ENDOFSCRIPT"
+  else
+    USE_PRIVILEGE "${BIN[rm]}" "${CFG_FILE}"
+  fi
+}
+
+function CONFIGURE_PLYMOUTH {
+  [[ ! -e ${OSCHROOT}/usr/share/plymouth ]] && return 0
+  #######################################################################
+  local BAKTITLE="Plymouth"
+  local HELP_MSG="Select your desired theme:"
+  #######################################################################
+  local -a SUGGESTS DESCRIPS
+  local PREV_CFG="$( "${BIN[find]}" "${OSCHROOT}/usr/share/plymouth/themes" -maxdepth 1 -type d -wholename '*/themes/?*' | "${BIN[grep]}" 'custom' | "${BIN[sed]}" 's|.*/||g' )"
+
+  IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${OSCHROOT}/usr/share/plymouth/themes" -maxdepth 1 -type d -wholename '*/themes/?*' | "${BIN[grep]}" -v 'custom' | "${BIN[sed]}" 's|.*/||g' | "${BIN[sort]}")
+  for PM_THEME in "${SUGGESTS[@]}"; do
+    DESCRIPS+=( "$("${BIN[grep]}" '^Description=' "${OSCHROOT}/usr/share/plymouth/themes/${PM_THEME}/${PM_THEME}.plymouth" | "${BIN[cut]}" -d= -f2 | "${BIN[sed]}" "s/'/'\\\''/g")" )
+  done
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "${PREV_CFG}" \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS'
+  SELECTED="$(</tmp/selection)"
+
+  if ! "${BIN[grep]}" 'HOOKS' "${OSCHROOT}/etc/mkinitcpio.conf" | "${BIN[grep]}" -v '^\s*#' | "${BIN[grep]}" 'plymouth'; then
+    USE_PRIVILEGE ${BIN[sed]} -i 's/autodetect/plymouth autodetect/g' "${OSCHROOT}/etc/mkinitcpio.conf"
+  fi
+  
+  if ! [[ -e "${OSCHROOT}/usr/share/plymouth/themes/spinner/watermark.png" ]]; then
+    USE_PRIVILEGE "${BIN[cp]}" "${OSCHROOT}/usr/share/plymouth/arch-logo.png" \
+       "${OSCHROOT}/usr/share/plymouth/themes/spinner/watermark.png"
+  fi
+
+  if ! [[ -e "${OSCHROOT}/usr/share/plymouth/themes/${SELECTED}-custom" ]]; then
+    if [[ -e "${OSCHROOT}/usr/share/plymouth/themes/${PREV_CFG}-custom" ]]; then
+      USE_PRIVILEGE "${BIN[rm]}" "${OSCHROOT}/usr/share/themes/${PREV_CFG}-custom"
+    fi
+    USE_PRIVILEGE "${BIN[cp]}" -r "${OSCHROOT}/usr/share/plymouth/themes/${SELECTED}" "${OSCHROOT}/usr/share/plymouth/themes/${SELECTED}-custom"
+    USE_PRIVILEGE "${BIN[rename]}" "${SELECTED}.plymouth" "${SELECTED}-custom.plymouth" "${OSCHROOT}/usr/share/plymouth/themes/${SELECTED}-custom/${SELECTED}.plymouth"
+  fi
+  
+  CFG_FILE="${OSCHROOT}/usr/share/plymouth/themes/${SELECTED}-custom/${SELECTED}-custom.plymouth"
+  CFG_ITEM="WatermarkVerticalAlignment"
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/${CFG_ITEM}=.*/${CFG_ITEM}=.6/g" "${CFG_FILE}"
+  USE_PRIVILEGE "${BIN[sed]}" -i 's/Animation=false/Animation=true/g' "${CFG_FILE}"
+
+  if ! "${BIN[grep]}" -q 'kernel\.printk\s*=\s*3\s\+3\s\+3\s\+3' "${OSCHROOT}"/etc/sysctl.d/*; then
+   USE_PRIVILEGE sh -c "echo 'kernel.printk = 3 3 3 3' > '${OSCHROOT}/etc/sysctl.d/20-quiet-printk.conf'"
+  fi
+  
+  if ! "${BIN[grep]}" -q $'\x1b.\x3f\x32\x35\x68' "${OSCHROOT}/etc/issue"; then
+    USE_PRIVILEGE sh -c "setterm -cursor on >> '${OSCHROOT}/etc/issue'"
+  fi
+}
+
+function CONFIGURE_SMARTD_DEVICESCAN {
+  local CFG_FILE="${OSCHROOT}/etc/smartd.conf"
+  [[ -e "${CFG_FILE}" ]] || return 0
+  local CFG_ITEM="DEVICESCAN"
+  #######################################################################
+  local BAKTITLE="SMART Device Scan Settings"
+  local HELP_MSG="Choose device scan settings:"
+  #######################################################################
+  local PREV_CFG="$("${BIN[grep]}" "^${CFG_ITEM}" "${CFG_FILE}")"
+
+  SUGGESTS+=(a o S n s)
+  DESCRIPS+=('Monitor all attributes'
+             'Enable automatic offline data collection'
+             'Enable automatic attribute autosave'
+             'Do not poll disks in SLEEP or STANDBY mode'
+             'Schedule tests')
+  [[ ${PREV_CFG} =~ -a ]] && SELSTATE+=(on) || SELSTATE+=(off)
+  [[ ${PREV_CFG} =~ '-o on' ]] && SELSTATE+=(on) || SELSTATE+=(off)
+  [[ ${PREV_CFG} =~ '-S on' ]] && SELSTATE+=(on) || SELSTATE+=(off)
+  [[ ${PREV_CFG} =~ '-n standby' ]] && SELSTATE+=(on) || SELSTATE+=(off)
+  [[ ${PREV_CFG} =~ '-s' ]] && SELSTATE+=(on) || SELSTATE+=(off)
+
+
+  DIALOG_MULTI_SELECT "${BACK_TTL}" "${MAIN_TTL}" 'hidetags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+  SELECTED="$(</tmp/selection)"
+
+  SELECTED="${SELECTED/a/-a}"
+  SELECTED="${SELECTED/s/-s}"
+  SELECTED="${SELECTED/n/-n standby,q}"
+  SELECTED="${SELECTED/o/-o on}"
+  SELECTED="${SELECTED/S/-S on}"
+
+  if [[ ${SELECTED} =~ -s ]]; then
+    #######################################################################
+    local HELP_MSG="Set hour of day for daily short self-tests:"
+    #######################################################################
+    DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 0 23 2
+    SELECTED="${SELECTED} (S/../.././$(</tmp/selection)"
+    #######################################################################
+    local HELP_MSG="Set hour of day for Sunday long self-tests:"
+    #######################################################################
+    DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 0 23 3
+    SELECTED="${SELECTED}|L/../../7/$(</tmp/selection))"
+  fi
+
+  USE_PRIVILEGE "${BIN[sed]}" -i "s:^${CFG_ITEM}.*:${CFG_ITEM} ${SELECTED}:g" "${CFG_FILE}"
+}
+
+function CONFIGURE_STICKY_BIT {
+  local CFG_FILE="${OSCHROOT}/etc/sysctl.d/stickybit.conf"
+  ##############################################################################
+  local BAKTITLE="Sticky Bit Directories"
+  local HELP_MSG="Allow the creation regular files in world-writable sticky\n"
+  HELP_MSG+="directories when the file owner doesn'\\''t match that of the directory?"
+  ##############################################################################
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    USE_PRIVILEGE sh -c "'${BIN[cat]}' <<- ENDOFSCRIPT > '${CFG_FILE}'
+		# Allow the creation regular files in world-writable sticky directories
+		# when the file owner doesn't match that of the directory
+		
+		fs.protected_regular=0
+		ENDOFSCRIPT"
+  else
+    USE_PRIVILEGE "${BIN[rm]}" "${CFG_FILE}"
+  fi
+}
+
+function CONFIGURE_SYSTEMD_LOGIND_HANDLELIDSWITCH {
+  local CFG_FILE="${OSCHROOT}/etc/systemd/logind.conf"
+  local CFG_ITEM='HandleLidSwitch'
+  local CFG_STNG='ignore'
+  ##############################################################################
+  local BAKTITLE="Lid Switch Fix"
+  local HELP_MSG="Set ${CFG_ITEM} to ${CFG_STNG}?\n"
+  HELP_MSG+="(Fixes system constantly going to sleep on some laptops.)"
+  ##############################################################################
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    USE_PRIVILEGE "${BIN[sed]}" -i "s/.*${CFG_ITEM}=.*/${CFG_ITEM}=${CFG_STNG}/g" "${CFG_FILE}"
+  else
+    USE_PRIVILEGE "${BIN[sed]}" -i "s/.*${CFG_ITEM}=/#${CFG_ITEM}=/g" "${CFG_FILE}"
+  fi
+}
+
+function CONFIGURE_SYSTEMD_JOUNRAL_SIZE {
+  local CFG_FILE="${OSCHROOT}/etc/systemd/journald.conf"
+  local CFG_ITEM="SystemMaxUse"
+  #######################################################################
+  local BAKTITLE="Jouurnal Size"
+  local HELP_MSG="Max Journal Size:"
+  #######################################################################
+  local PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | ${BIN[tr]} -d 'BKMGTbi')"
+
+  [[ -z ${PREV_CFG} ]] && PREV_CFG='64'
+  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 64 512 "${PREV_CFG}"
+  SELECTED="$(</tmp/selection)"
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/^.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}M/g" "${CFG_FILE}"
+}
+
+function CONFIGURE_SYSTEMD_SERVICE_START_TIMEOUT {
+  local CFG_FILE="${OSCHROOT}/etc/systemd/system.conf"
+  local CFG_ITEM="DefaultTimeoutStartSec"
+  #######################################################################
+  local BAKTITLE="Default Service Startup Timeout"
+  local HELP_MSG="Timeout (in seconds):"
+  #######################################################################
+  local PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | ${BIN[tr]} -d 's')"
+
+  [[ -z ${PREV_CFG} ]] && PREV_CFG='30'
+  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 30 90 "${PREV_CFG}"
+  SELECTED="$(</tmp/selection)"
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/^.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}s/g" "${CFG_FILE}"
+}
+
+function CONFIGURE_SYSTEMD_SERVICE_STOP_TIMEOUT {
+  local CFG_FILE="${OSCHROOT}/etc/systemd/system.conf"
+  local CFG_ITEM="DefaultTimeoutStopSec"
+  #######################################################################
+  local BAKTITLE="Default Service Stop Timeout"
+  local HELP_MSG="Timeout (in seconds):"
+  #######################################################################
+  local PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | ${BIN[tr]} -d 's')"
+
+  [[ -z ${PREV_CFG} ]] && PREV_CFG='15'
+  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 15 45 "${PREV_CFG}"
+  SELECTED="$(</tmp/selection)"
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/^.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}s/g" "${CFG_FILE}"
+}
+
+function CONFIGURE_SYSTEMD_RESOLVED {
+  #######################################################################
+  local BAKTITLE="Resolver"
+  local HELP_MSG="Use systemd-resolved?"
+  #######################################################################
+
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    USE_PRIVILEGE "${BIN[ln]}" -fs '/run/systemd/resolve/resolv.conf' "${OSCHROOT}/etc/resolv.conf"
+    USE_PRIVILEGE "${BIN[sed]}" -i 's/ [!UNAVAIL=return] / /g' "${OSCHROOT}/etc/nsswitch.conf"
+    USE_PRIVILEGE "${BIN[sed]}" -i 's/^#*MulticastDNS.*/MulticastDNS=no/g' "${OSCHROOT}/etc/systemd/resolved.conf"
+  else
+    USE_PRIVILEGE "${BIN[rm]}" "${OSCHROOT}/etc/resolv.conf" && touch "${OSCHROOT}/etc/resolv.conf"
+    USE_PRIVILEGE "${BIN[sed]}" -i 's/resolve dns/resolve [!UNAVAIL=return] dns/ /g' "${OSCHROOT}/etc/nsswitch.conf"
+    USE_PRIVILEGE "${BIN[sed]}" -i 's/^#*MulticastDNS.*/#MulticastDNS=/g' "${OSCHROOT}/etc/systemd/resolved.conf"
+  fi
+}
+
+function CONFIGURE_TIMEZONE {
+  local CFG_FILE="${OSCHROOT}/etc/localtime"
+  ##############################################################################
+  local BAKTITLE="Time Zone Selection"
+  ##############################################################################
+  local SELECTED PREV_CFG="$("${BIN[readlink]}" "${CFG_FILE}")"
+
+  [[ -z ${PREV_CFG} ]] && PREV_CFG='/usr/share/zoneinfo/'
+
+  DIALOG_FILE_SELECT "${TITLEBAR}" "${BAKTITLE}" "${OSCHROOT}${PREV_CFG}"
+  SELECTED="$(</tmp/selection)"
+  SELECTED="${SELECTED#"${OSCHROOT}"}"
+  USE_PRIVILEGE "${BIN[ln]}" -fs "${SELECTED}" "${CFG_FILE}"
+}
+
+function CONFIGURE_VCONSOLE_FONT {
+  CFG_FILE="${OSCHROOT}/etc/vconsole.conf"
+  CFG_ITEM="FONT"
+  ##############################################################################
+  local BAKTITLE="Console Font"
+  local HELP_MSG="Select your console font:"
+  ##############################################################################
+  local -a SUGGESTS SELSTATE
+  local SELECTED
+  local PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)"
+
+  [[ -z ${PREV_CFG} ]] && PREV_CFG='default8x16'
+  IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${OSCHROOT}/usr/share/kbd/consolefonts" -name '*.psfu.gz' | "${BIN[sed]}" 's|.*/||g;s|\.psfu.gz||g' | "${BIN[sort]}")
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${PREV_CFG}" \
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE'
+  SELECTED="$(</tmp/selection)"
+
+  USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
+
+  if "${BIN[grep]}" -q "${CFG_ITEM}=" "${CFG_FILE}"; then
+    USE_PRIVILEGE "${BIN[sed]}" -i "s/.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}/g" "${CFG_FILE}"
+  else
+    USE_PRIVILEGE sh -c "echo '${CFG_ITEM}=${SELECTED}' >> '${CFG_FILE}'"
+  fi
+}
+
+function CONFIGURE_VCONSOLE_KEYMAP {
+  CFG_FILE="${OSCHROOT}/etc/vconsole.conf"
+  CFG_ITEM="KEYMAP"
+  ##############################################################################
+  local BAKTITLE="Keymap"
+  local HELP_MSG="Select your keymap:"
+  ##############################################################################
+  local -a SUGGESTS
+  local COUNTRY SELECTED
+
+  COUNTRY="$("${BIN[grep]}" 'LANGUAGE=' "${CFG_FILE/vconsole/locale}" | "${BIN[cut]}" -d_ -f2)"
+  IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${OSCHROOT}/usr/share/kbd/keymaps" \( -name "${COUNTRY,,}-*" -o -name "${COUNTRY,,}_*" -o -name "${COUNTRY,,}.*" \) | "${BIN[sed]}" 's|.*/||g;s|\.map\.gz||g' | "${BIN[sort]}")
+  
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 
+  SELECTED="$(</tmp/selection)"
+
+  USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
+
+  if "${BIN[grep]}" -q "${CFG_ITEM}=" "${CFG_FILE}"; then
+    USE_PRIVILEGE "${BIN[sed]}" -i "s/.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}/g" "${CFG_FILE}"
+  else
+    USE_PRIVILEGE sh -c "echo '${CFG_ITEM}=${SELECTED}' >> '${CFG_FILE}'"
+  fi
+}
+
+function CONFIGURE_VIDEO_ACCELERATION {
+  local CFG_FILE="${OSCHROOT}/etc/profile.d/video-accel.sh"
+  #######################################################################
+  local BAKTITLE="Video Acceleration"
+  local HELP_MSG="Install profile script to help with video acceleration?"
+  #######################################################################
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    USE_PRIVILEGE sh -c "'${BIN[cat]}' <<- ENDOFSCRIPT > '${CFG_FILE}'
+		#!/usr/bin/env sh
+		
+		gmn() {
+		  lscpu | grep Model: | sed 's/\s\+//g' | cut -d: -f2
+		}
+		
+		case \"\\\$(lsmod)\" in
+		   *amdgpu*) ldn=radeonsi; vdn=radeonsi;;
+		      i915*) [ \\\$(gmn) -gt 60 ] && ldn=iHD || ldn=i965; vdn=va_gl;;
+		  *nouveau*) ldn=nouveau; vdn=nouveau;;
+		   *nvidia*) ldn=vdpau; vdn=nvidia;;
+		esac
+		
+		[ -n \\\$ldn ] && export LIBVA_DRIVER_NAME=\\\$ldn
+		[ -n \\\$vdn ] && export VDPAU_DRIVER=\\\$vdn
+		ENDOFSCRIPT"
+  else
+    USE_PRIVILEGE "${BIN[rm]}" "${CFG_FILE}"
+  fi
+}
+
+function CREATE_USER {
+  :
+}
+
+function WIZARD_MODE {
+  CONFIGURE_FSTAB
+  CONFIGURE_TIMEZONE
+  CONFIGURE_LOCALE_AVAILABILITY
+  CONFIGURE_LOCALE_LANGUAGE
+  CONFIGURE_LOCALE_COLLATION
+  CONFIGURE_LOCALE_MESSAGES
+  CONFIGURE_VCONSOLE_KEYMAP
+  CONFIGURE_VCONSOLE_FONT
+  CONFIGURE_HOSTNAME
+  CONFIGURE_LOCAL_DOMAIN
+  CONFIGURE_HOSTS
+  #CONFIGURE_INITRAMFS_MODULES
+  #CONFIGURE_INITRAMFS_HOOKS
+  CONFIGURE_INITRAMFS_COMPRESSION
+  #CONFIGURE_INITIAL_USER
+  #CONFIGURE_PASSWORDS
+  #CONFIGURE_PACMAN_OPTIONS
+  #CONFIGURE_PACMAN_REPOS
+  #CONFIGURE_PACMAN_KEYS
+  #CONFIGURE_NANORC_OPTIONS
+  CONFIGURE_NANORC_COLORS
+  #CONFIGURE_SUDO
+  CONFIGURE_POLICYKIT_ROOTPW
+  CONFIGURE_STICKY_BIT
+  #CONFIGURE_NTP
+  CONFIGURE_PLYMOUTH
+  CONFIGURE_SMARTD_DEVICESCAN
+  CONFIGURE_SYSTEMD_LOGIND_HANDLELIDSWITCH
+  CONFIGURE_SYSTEMD_JOUNRAL_SIZE
+  CONFIGURE_SYSTEMD_SERVICE_START_TIMEOUT
+  CONFIGURE_SYSTEMD_SERVICE_STOP_TIMEOUT
+  CONFIGURE_SYSTEMD_RESOLVED
+  CONFIGURE_DEFAULT_EDITOR
+  CONFIGURE_VIDEO_ACCELERATION
+}
+
+while true; do
+  set -x
+  WIZARD_MODE
+  exit 0
+  REVIEW_MODE
+done
+
+echo "FINALIZING SETUP"
+
+"${BIN[arch-chroot]}" "${OSCHROOT}" 'locale-gen'
+"${BIN[arch-chroot]}" "${OSCHROOT}" 'mkinitcpio -P'
+
+exit 0
