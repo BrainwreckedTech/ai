@@ -391,12 +391,6 @@ function GET_GPU_TYPE_NVIDIA {
   esac
 }
 
-function GET_PRIVILEGE {
-  while ! ${BIN[sudo]} true; do
-    continue
-  done
-}
-
 function IS_REPO_PKG {
   pacman -Si "${1}" > /dev/null 2>&1
 }

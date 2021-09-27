@@ -178,6 +178,23 @@ function GET_PARTITION_ID_LIST {
   echo "${TSV_LIST}"
 }
 
+function GET_PRIVILEGE {
+  local PASSWORD
+  until echo "${PASSWORD}" | ${BIN[sudo]} -S true; do
+    case "${BIN[dialog]}" in
+      */dialog)
+        PASSWORD=$("${BIN[dialog]}" --title "ROOT PRIVILEGE REQUIRED" \
+          --backtitle "PARITION HELPER" --no-cancel --insecure \
+          --passwordbox "sudo password:" 8 40 2>&1 1>&3)
+        ;;
+      *)
+        "${BIN[sudo]}" -A true 2>&1
+        ;;
+    esac
+  done
+  unset PASSWORD
+}
+
 function TRIM {
   local STRING="${1}"
   # remove leading whitespace characters
