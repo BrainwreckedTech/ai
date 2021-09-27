@@ -11,7 +11,7 @@ declare -a BROWSERS_BLINK BROWSERS_GECKO BROWSERS_WBKT2GTK BROWSERS_QTWEBKIT
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in curl find pacman pacstrap reflector sort sudo tr xargs; do
+for CMD in curl pacman pacstrap reflector xargs; do
     BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
