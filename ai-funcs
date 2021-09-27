@@ -303,12 +303,12 @@ function DIALOG_TITLES {
 function DIALOG_DIRECTORY_SELECT {
   local MAIN_TTL="${1}"
   local BACK_TTL="${2}"
-  local HELP_MSG="${3}"
+  local DIRECTRY="${3}"
 
   COMMAND="$(DIALOG_MAIN_CALL) "
   COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
-  COMMAND+="--dselect '${HELP_MSG}' "
-  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'drctry' "${HELP_MSG}" '' '') "
+  COMMAND+="--dselect '${DIRECTRY}' "
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'drctry' "${DIRECTRY}" '' '') "
   for (( PC=0 ; PC < ${#ITM_TAGS[@]} ; PC++ )); do
     [[ ${BIN[dialog]} =~ zenity ]] && COMMAND+=" '${ITMSLCTS[${PC}]}'"
     COMMAND+=" '${ITM_TAGS[${PC}]}' '${ITM_OPTS[${PC}]}'"
