@@ -674,7 +674,7 @@ function FINALIZE {
     *dialog)
       if [[ ${BIN[dialog]} =~ /dialog ]]; then
         exec 3>&1
-        until echo "${PASSWORD}" | sudo -S true > /dev/null 2>&1; do
+        until echo "${PASSWORD}" | "${BIN[sudo]}" -S true > /dev/null 2>&1; do
           PASSWORD=$("${BIN[dialog]}" --title "ROOT PRIVILEGE REQUIRED" \
           --backtitle "PARITION HELPER" --no-cancel --insecure --passwordbox "sudo password:" 8 40 \
           2>&1 1>&3)

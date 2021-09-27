@@ -95,21 +95,21 @@ function GET_BROWSERS {
   fi
 
   while true; do
-    printf 'XXX\nLooking for %s...\nXXX\n' "Brave"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Brave"
     IS_REPO_PKG 'brave' && BROWSERS_BLINK+=('brave:Brave')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     [[ ! ${BROWSERS_BLINK[*]} =~ Brave ]] && IS_REPO_PKG 'brave-bin' && BROWSERS_BLINK+=('brave-bin:Brave')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     
-    printf 'XXX\nLooking for %s...\nXXX\n' "Chromium"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Chromium"
     BROWSERS_BLINK+=('chromium:Chromium')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     
-    printf 'XXX\nLooking for %s...\nXXX\n' "Chrome"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Chrome"
     IS_REPO_PKG 'google-chrome' && BROWSERS_BLINK+=('google-chrome:Chrome')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     
-    printf 'XXX\nLooking for %s...\nXXX\n' "Edge"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Edge"
     IS_REPO_PKG 'microsoft-edge' && BROWSERS_BLINK+=('microsoft-edge:Edge')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     [[ ! ${BROWSERS_BLINK[*]} =~ Edge ]] && IS_REPO_PKG 'microsoft-edge-beta' && BROWSERS_BLINK+=('microsoft-edge-beta:Edge')
@@ -117,47 +117,47 @@ function GET_BROWSERS {
     [[ ! ${BROWSERS_BLINK[*]} =~ Edge ]] && IS_REPO_PKG 'microsoft-edge-beta-bin' && BROWSERS_BLINK+=('microsoft-edge-beta-bin:Edge')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     
-    printf 'XXX\nLooking for %s...\nXXX\n' "Opera"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Opera"
     BROWSERS_BLINK+=('opera:Opera')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Ungoogled Chromium"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Ungoogled Chromium"
     IS_REPO_PKG 'ungoogled-chromium' && BROWSERS_BLINK+=('ungoogled-chromium:Ungoogled_Chromium')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Vivaldi"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Vivaldi"
     BROWSERS_BLINK+=('vivaldi:Vivaldi')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     
-    printf 'XXX\nLooking for %s...\nXXX\n' "Yandex"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Yandex"
     IS_REPO_PKG 'yandex-browser' && BROWSERS_BLINK+=('yandex-browser:Yandex.Browser')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     [[ ! ${BROWSERS_BLINK[*]} =~ Yandex ]] && IS_REPO_PKG 'yandex-browser-beta' && BROWSERS_BLINK+=('yandex-browser-beta:Yandex.Browser')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Firefox"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Firefox"
     BROWSERS_GECKO+=('firefox:Firefox')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Firefox ESR"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Firefox ESR"
     IS_REPO_PKG 'firefox-esr' && BROWSERS_GECKO+=('firefox-esr:Firefox_ESR')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     [[ ! ${BROWSERS_GECKO[*]} =~ 'Firefox ESR' ]] && IS_REPO_PKG 'firefox-esr-bin' && BROWSERS_GECKO+=('firefox-esr-bin:Firefox_ESR')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Firedragon"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Firedragon"
     IS_REPO_PKG 'firedragon' && BROWSERS_GECKO+=('firedragon:Firedragon')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Icecat"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Icecat"
     IS_REPO_PKG 'icecat' && BROWSERS_GECKO+=('icecat:Icecat')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Librewolf"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Librewolf"
     IS_REPO_PKG 'librewolf' && BROWSERS_GECKO+=('librewolf:Librewolf')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Palemoon"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Palemoon"
     IS_REPO_PKG 'palemoon' && BROWSERS_GECKO+=('palemoon:Palemoon')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     [[ ! ${BROWSERS_GECKO[*]} =~ Palemoon ]] && IS_REPO_PKG 'palemoon-bin' && BROWSERS_GECKO+=('palemoon-bin:Palemoon')
@@ -165,11 +165,11 @@ function GET_BROWSERS {
     [[ ! ${BROWSERS_GECKO[*]} =~ Palemoon ]] && IS_REPO_PKG 'palemoon-gtk3-bin' && BROWSERS_GECKO+=('palemoon-gtk3-bin:Palemoon')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     
-    printf 'XXX\nLooking for %s...\nXXX\n' "Seamonkey"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Seamonkey"
     BROWSERS_GECKO+=('seamonkey:Seamonkey')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Waterfox"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Waterfox"
     IS_REPO_PKG 'waterfox' && BROWSERS_GECKO+=('waterfox:Waterfox')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     [[ ! ${BROWSERS_GECKO[*]} =~ Palemoon ]] && IS_REPO_PKG 'waterfox-bin' && BROWSERS_GECKO+=('waterfox-bin:Waterfox')
@@ -177,35 +177,35 @@ function GET_BROWSERS {
     [[ ! ${BROWSERS_GECKO[*]} =~ Palemoon ]] && IS_REPO_PKG 'waterfox-g3-bin' && BROWSERS_GECKO+=('waterfox-g3-bin:Waterfox')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Eolie"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Eolie"
     BROWSERS_WBKT2GTK+=('eolie:Eolie')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "GNOME Web"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "GNOME Web"
     BROWSERS_WBKT2GTK+=('epiphany:GNOME Web')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Badwolf"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Badwolf"
     IS_REPO_PKG 'badwolf' && BROWSERS_WBKT2GTK+=('badwolf:Badwolf')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Lariza"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Lariza"
     IS_REPO_PKG 'lariza' && BROWSERS_WBKT2GTK+=('lariza:Lariza')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Netsurf"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Netsurf"
     BROWSERS_WBKT2GTK+=('netsurf:Netsurf')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Falkon"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Falkon"
     BROWSERS_QTWEBKIT+=('falkon:Falkon')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "Otter Browser"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Otter Browser"
     IS_REPO_PKG 'otter-browser' && BROWSERS_QTWEBKIT+=('otter-browser:Otter Browser')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
-    printf 'XXX\nLooking for %s...\nXXX\n' "QuteBrowser"
+    "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "QuteBrowser"
     IS_REPO_PKG 'qutebrowser' && BROWSERS_QTWEBKIT+=('qutebrowser:Qutebrowser')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
 
@@ -1188,7 +1188,7 @@ function PACKAGESEL_DESKTOP {
     for GROUPPKG in "${VIRT_GRP[@]}"; do
       ((PKGCOUNT++))
       echo "$((PKGCOUNT*100/${#VIRT_GRP[@]}))"
-      printf 'XXX\nLooking up information for %s...\nXXX\n' "${GROUPPKG}"
+      "${BIN[printf]}" 'XXX\nLooking up information for %s...\nXXX\n' "${GROUPPKG}"
       EXT_PKGS+=("${GROUPPKG}")
       EXT_DSCS+=("$(${BIN[pacman]} -Si "${GROUPPKG}" | \
                     ${BIN[grep]} 'Description' | ${BIN[sed]} "s/^.*: //g;s/'/'\\\''/g")")
@@ -1207,7 +1207,7 @@ function PACKAGESEL_DESKTOP {
       for GROUPPKG in "${GRP_PKGS[@]}"; do
         ((PKGCOUNT++))
         echo "$((PKGCOUNT*100/${#GRP_PKGS[@]}))"
-        printf 'XXX\nLooking up information for %s...\nXXX\n' "${GROUPPKG}"
+        "${BIN[printf]}" 'XXX\nLooking up information for %s...\nXXX\n' "${GROUPPKG}"
         PKG_LIST+=("${GROUPPKG}")
         PKG_DSCS+=("$(${BIN[pacman]} -Si "${GROUPPKG}" | \
                       ${BIN[grep]} 'Description' | ${BIN[sed]} "s/^.*: //g;s/'/'\\\''/g")")
@@ -1228,7 +1228,7 @@ function PACKAGESEL_DESKTOP {
       if IS_REPO_PKG "${GROUPPKG}"; then
         ((PKGCOUNT++))
         echo "$((PKGCOUNT*100/${#AUR_PKGS[@]}))"
-        printf 'XXX\nLooking up information for %s...\nXXX\n' "${GROUPPKG}"
+        "${BIN[printf]}" 'XXX\nLooking up information for %s...\nXXX\n' "${GROUPPKG}"
         AUR_REPO+=("${GROUPPKG}")
         AUR_DSCS+=("$(${BIN[pacman]} -Si "${GROUPPKG}" | \
                       ${BIN[grep]} 'Description' | ${BIN[sed]} "s/^.*: //g;s/'/'\\\''/g")")
@@ -2572,18 +2572,18 @@ function REVIEW_MODE {
     case "$(</tmp/selection)" in
       intents)
         for x in "${!INTENTS[@]}"; do
-          printf "[%s]=%s\n" "${x}" "${INTENTS[${x}]}" >> /tmp/debug
+          "${BIN[printf]}" "[%s]=%s\n" "${x}" "${INTENTS[${x}]}" >> /tmp/debug
         done;;
       pkgs-cat)
         for x in "${!PACKAGES[@]}"; do
-          printf "[%s]=%s\n" "${x}" "${PACKAGES[${x}]}" >> /tmp/debug
+          "${BIN[printf]}" "[%s]=%s\n" "${x}" "${PACKAGES[${x}]}" >> /tmp/debug
         done;;
       pkgs-all)
         echo "${PACKAGES[*]}" | "${BIN[xargs]}" -n1 | "${BIN[sort]}" | "${BIN[xargs]}" | "${BIN[fold]}" -sw 72 > /tmp/debug
         ;;
       finalize)
         until sh ~/ainstall.sh; do
-          printf 'Installation failed.  Retry? [Y/n] '
+          "${BIN[printf]}" 'Installation failed.  Retry? [Y/n] '
           read -rn1 TRYAGAIN
           [[ ${TRYAGAIN,,} == n ]] && true || { unset TRYAGAIN; false; }
         done
