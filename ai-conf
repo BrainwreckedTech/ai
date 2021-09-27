@@ -357,6 +357,38 @@ function CONFIGURE_NANORC_COLORS {
   fi
 }
 
+function CONFIGURE_NANORC_OPTIONS {
+  CFG_FILE="${OSCHROOT}/etc/nanorc"
+  ##############################################################################
+  local BAKTITLE="NanoRC Options"
+  local HELP_MSG="Select the options to enable:"
+  ##############################################################################
+  local -a SUGGESTS SELSTATE
+  local LANGUAGE LOCALE SELECTED
+
+  while read -r OPTION; do
+    SUGGESTS+=("${OPTION}")
+    DESCRIPS+=("$("${BIN[grep]}" -B5 "set ${OPTION}" "${CFG_FILE}" | ${BIN[grep]} -v '^#bind' | "${BIN[grep]}" -v '^\s*#*\s*set ' | "${BIN[grep]}" -v -- '--' | "${BIN[sed]}" ':a;N;$!ba;s/.*\n\n//g' | "${BIN[sed]}" 's/^## //g' | "${BIN[tr]}" '\n' ' ' | "${BIN[sed]}" 's/ $//g' | "${BIN[sed]}" "s/'/'\\\''/g")")
+    "${BIN[grep]}" -q "^\s*#\s*set ${OPTION}" "${CFG_FILE}" && SELSTATE+=(off) || SELSTATE+=(on)
+  done <<< "$("${BIN[grep]}" 'set ' "${CFG_FILE}" | "${BIN[grep]}" -v '[.,:;\"0-9]\|color' | "${BIN[sed]}" 's/^\s*\#*\s*set //g' | "${BIN[sort]}" -u)"
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+  SELECTED="$(</tmp/selection)"
+
+  for (( LC=0 ; LC<${#SUGGESTS[@]} ; LC++)); do
+    if [[ ${SELECTED} =~ ${SUGGESTS[${LC}]} ]]; then
+      if [[ ${SELSTATE[${LC}]} == off ]]; then
+        USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*#\s*set ${SUGGESTS[${LC}]}/set ${SUGGESTS[${LC}]}/g" "${CFG_FILE}"
+      fi
+    else
+      if [[ ${SELSTATE[${LC}]} == on ]]; then
+        USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*set ${SUGGESTS[${LC}]}/# set ${SUGGESTS[${LC}]}/g" "${CFG_FILE}"
+      fi
+    fi
+  done
+}
+
 function CONFIGURE_POLICYKIT_ROOTPW {
   local CFG_FILE="${OSCHROOT}/etc/polkit-1/rules.d/49-rootpw_global.rules"
   [[ -e "${CFG_FILE%\/*}" ]] || return 0
@@ -695,7 +727,7 @@ function WIZARD_MODE {
   #CONFIGURE_PACMAN_OPTIONS
   #CONFIGURE_PACMAN_REPOS
   #CONFIGURE_PACMAN_KEYS
-  #CONFIGURE_NANORC_OPTIONS
+  CONFIGURE_NANORC_OPTIONS
   CONFIGURE_NANORC_COLORS
   #CONFIGURE_SUDO
   CONFIGURE_POLICYKIT_ROOTPW
@@ -713,7 +745,6 @@ function WIZARD_MODE {
 }
 
 while true; do
-  set -x
   WIZARD_MODE
   exit 0
   REVIEW_MODE
