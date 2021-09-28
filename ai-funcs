@@ -180,19 +180,27 @@ function GET_PARTITION_ID_LIST {
 
 function GET_PRIVILEGE {
   local PASSWORD
-  until echo "${PASSWORD}" | ${BIN[sudo]} -S true; do
+  until ${BIN[sudo]} -nv; do
     case "${BIN[dialog]}" in
       */dialog)
+        exec 3>&1
         PASSWORD=$("${BIN[dialog]}" --title "ROOT PRIVILEGE REQUIRED" \
-          --backtitle "PARITION HELPER" --no-cancel --insecure \
+          --backtitle "AI ASSISTED INSTALLER" --no-cancel --insecure \
           --passwordbox "sudo password:" 8 40 2>&1 1>&3)
+        exec 3>&-
+        [[ -n ${PASSWORD} ]] && echo "${PASSWORD}" | ${BIN[sudo]} -S true
+        unset PASSWORD
+        if ! ${BIN[sudo]} -nv; then
+          "${BIN[dialog]}" --title "ROOT PRIVILEGE REQUIRED" \
+          --backtitle "AI ASSISTED INSTALLER" --infobox "Invalid password.  Try again." 3 27
+          sleep 3
+        fi
         ;;
       *)
         "${BIN[sudo]}" -A true 2>&1
         ;;
     esac
   done
-  unset PASSWORD
 }
 
 function TRIM {
