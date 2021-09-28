@@ -170,6 +170,58 @@ function CONFIGURE_INITRAMFS_COMPRESSION {
   fi
 }
 
+function CONFIGURE_INITRAMFS_HOOKS {
+  local CFG_FILE="${OSCHROOT}/etc/mkinitcpio.conf"
+  [[ -e "${CFG_FILE}" ]] || return 0
+  local CFG_ITEM="HOOKS"
+  ##############################################################################
+  local BAKTITLE='InitRAMFS Hooks'
+  local HELP_MSG='NOTE: Do NOT wantonly disable base or udev unless you know '
+  HELP_MSG+='what you are doing!!!'
+  ##############################################################################
+  local -a VALHOOKS SUGGESTS DESCRIPS SELSTATE
+  local THISHOOK
+  local PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[sed]}" 's/.*(\(.*\)).*/\1/g')"
+
+  # These are the hooks we are willing to deal with.  As the systemd stuff isn't
+  # well documented, we won't deal with it and will stick with the busybox stuff.
+
+  # Also, not sure why Arch packages a plymouth-encrypt initcpio hook with plymouth
+  # when it's virtually the same as the regular encrypt hook sans a missing
+  # dm-integrity module that the regular encrypt hook adds.
+
+  VALHOOKS=(base udev usr resume shutdown btrfs memdisk plymouth hostdata
+            autodetect modconf block zfs net dmraid mdadm filesystems keyboard
+            keymap consolefont encrypt lvm2 fsck strip)
+
+  for THISHOOK in "${VALHOOKS[@]}"; do
+    [[ -e "${OSCHROOT}/usr/lib/initcpio/install/${THISHOOK}" ]] && SUGGESTS+=("${THISHOOK}")
+  done
+
+  for THISHOOK in "${SUGGESTS[@]}"; do
+    HELPTEXT="$("${BIN[sed]}" ':a;N;$!ba;
+                s/.*HELPEOF\n\(.*\)\nHELPEOF.*/\1/g;
+                s/\n\n.*//g;
+                s/\. .*/./g;
+                s/,.*/./g;
+                s/\n(.*/./g;
+                s/\n/ /g;
+                s/ using pata\././g;
+                s/ a support/ support/g;
+                s/Disk/disk/g;
+                s/This //g;
+                s/^hook //g;
+                s/^will //g' "${OSCHROOT}/usr/lib/initcpio/install/${THISHOOK}")"
+    DESCRIPS+=("${HELPTEXT^}")
+    [[ ${PREV_CFG} =~ ${THISHOOK} ]] && SELSTATE+=(on) || SELSTATE+=(off)
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+  SELECTED="$(</tmp/selection)"
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*${CFG_ITEM}=.*/${CFG_ITEM}=(${SELECTED})/g" "${CFG_FILE}"
+}
+
 function CONFIGURE_INITRAMFS_MODULES {
   local CFG_FILE="${OSCHROOT}/etc/mkinitcpio.conf"
   [[ -e "${CFG_FILE}" ]] || return 0
@@ -754,7 +806,7 @@ function WIZARD_MODE {
   CONFIGURE_LOCAL_DOMAIN
   CONFIGURE_HOSTS
   CONFIGURE_INITRAMFS_MODULES
-  #CONFIGURE_INITRAMFS_HOOKS
+  CONFIGURE_INITRAMFS_HOOKS
   CONFIGURE_INITRAMFS_COMPRESSION
   #CONFIGURE_INITIAL_USER
   #CONFIGURE_PASSWORDS
