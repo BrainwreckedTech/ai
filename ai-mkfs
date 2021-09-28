@@ -343,9 +343,8 @@ function SELECT_FORMAT_SIMPLE {
     HELP_MSG+="NOTE: THE FIRST SUBVOLUME WILL BE ${WARN}"
     ######################################################################
     DLG_HIGH=10 && DLG_WIDE="$(($(tput cols)*75/100))"
-    DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
-      "${DLG_HIGH}" "${DLG_WIDE}" "${SUBVOLS[${PARTNAME}]}" || return "${?}"
-      SUBVOLS[${PARTNAME}]="$(</tmp/selection)"
+    DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "${SUBVOLS[${PARTNAME}]}" || return "${?}"
+    SUBVOLS[${PARTNAME}]="$(</tmp/selection)"
   else
     return 0
   fi

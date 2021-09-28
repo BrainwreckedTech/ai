@@ -226,9 +226,10 @@ function DIALOG_GEOMETRY_AUTO {
   case "${DLG_TYPE}" in
     drctry) HIGH_PAD=16;;
       file) HIGH_PAD=16;;
+     input) WIDE_PAD=4;  HIGH_PAD=7; unset LST_HIGH;;
      multi) WIDE_PAD=14; HIGH_PAD=6;;
     single) WIDE_PAD=10; HIGH_PAD=6;;
-     range) WIDE_PAD=4;  HIGH_PAD=7 ; unset LST_HIGH;;
+     range) WIDE_PAD=4;  HIGH_PAD=7; unset LST_HIGH;;
      yesno) WIDE_PAD=4;  HIGH_PAD=4; unset LST_HIGH;;
     msgbox) WIDE_PAD=4;  HIGH_PAD=4; unset LST_HIGH;;
   esac
@@ -393,9 +394,7 @@ function DIALOG_INPUT {
   local MAIN_TTL="${1}"
   local BACK_TTL="${2}"
   local HELP_MSG="${3}"
-  local -i DLG_HIGH="${4}"
-  local -i DLG_WIDE="${5}"
-  local INIT_TXT="${6}"
+  local INIT_TXT="${4}"
   local D_SWITCH='--inputbox '
 
   [[ ${BIN[dialog]} =~ zenity ]] && D_SWITCH='--entry --text='
@@ -404,7 +403,7 @@ function DIALOG_INPUT {
   COMMAND="$(DIALOG_MAIN_CALL) "
   COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
   COMMAND+="${D_SWITCH}'${HELP_MSG}' "
-  COMMAND+="$(DIALOG_GEOMETRY "${DLG_HIGH}" "${DLG_WIDE}" '-1') '${INIT_TXT}'"
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'input' "${HELP_MSG}" '' '') '${INIT_TXT}'"
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
   return ${?}
 }
