@@ -7,6 +7,7 @@ pkghlprs	Pacman Helpers		pacutils			on	Helper tools for libalpm
 pkghlprs	Pacman Helpers		pkgfile				on	Find packages via .files metadata
 pkghlprs	Pacman Helpers		reflector			on	Pacman mirrorlist filter tool
 exsystem	Extra System Packages	cronie				off	Cron daemon
+exsystem	Extra System Packages	gpm				on	Mouse server for consoles and xterm
 exsystem	Extra System Packages	plocate				on	Faster locate
 exsystem	Extra System Packages	openssh				on	OpenSSH client and server
 exsystem	Extra System Packages	polkit				on	Privilege toolkit
