@@ -170,6 +170,40 @@ function CONFIGURE_INITRAMFS_COMPRESSION {
   fi
 }
 
+function CONFIGURE_INITRAMFS_MODULES {
+  local CFG_FILE="${OSCHROOT}/etc/mkinitcpio.conf"
+  [[ -e "${CFG_FILE}" ]] || return 0
+  local CFG_ITEM="MODULES"
+  ##############################################################################
+  local BAKTITLE='InitRAMFS Modules'
+  local HELP_MSG='You normally do not need to add modules to the InitRAMFS.\n'
+  HELP_MSG+='However you might want to do so under special circumstances.\n\n'
+  HELP_MSG+='NVIDIA Early KMS: nvidia + nvidia_drm + nvidia_modeset + nvidia_uvm\n'
+  HELP_MSG+='Other Early KMS: amdgpu or radeon or i915 or nouveau\n'
+  HELP_MSG+='QEMU Early KMS: bochs_drm or cirrus or qxl or virtio-gpu\n'
+  HELP_MSG+='Logitech Wireless: hid_logitech_dj + uhci_hcd + usbhid\n'
+  HELP_MSG+='Other USB Keyboards: hid_generic + ohci_pci + usbhid\n'
+  HELP_MSG+='AT & PS/2 Keyboards: atkbd\n'
+  HELP_MSG+='Filesystems: btrfs ext[2,4] f2fs fat ntfs jfs xfs\n'
+  HELP_MSG+='USB Storage: usb_storage\n\n'
+  HELP_MSG+='Enter space-delimited list of modules to include in the InitRAMFS:'
+  ##############################################################################
+  local -a SUGGESTS
+  local SELECTED
+  local PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[sed]}" 's/.*(\(.*\)).*/\1/g')"
+
+  SELECTED='-'
+  until [[ ${SELECTED} =~ ^[a-zA-Z0-9_' ']+$ ]]; do
+    if [[ ${SELECTED} != '-' ]]; then
+      DIALOG_MSGBOX "${TITLEBAR}" "${BAKTITLE}" "Invalid characters in module list."
+    fi
+    DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "${PREV_CFG}"
+    SELECTED="$(</tmp/selection)"
+    PREV_CFG="${SELECTED}"
+  done
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*${CFG_ITEM}=.*/${CFG_ITEM}=(${SELECTED})/g" "${CFG_FILE}"
+}
+
 function CONFIGURE_LOCAL_DOMAIN {
   local CFG_FILE="${OSCHROOT}/etc/systemd/resolved.conf"
   local CFG_ITEM="Domains"

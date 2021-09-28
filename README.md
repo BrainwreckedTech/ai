@@ -31,7 +31,7 @@ TODO: Support is planned for other Linux distributions that can use the `chroot`
 ## `ai-confs`
 Configures the new system.  Does as much work as possible without chrooting in.
 
-STATUS: Work in progress -- about 73% done.
+STATUS: Work in progress -- about 76% done.
 
 - [x] CONFIGURE_FSTAB
 - [x] CONFIGURE_TIMEZONE
@@ -44,7 +44,7 @@ STATUS: Work in progress -- about 73% done.
 - [x] CONFIGURE_HOSTNAME
 - [x] CONFIGURE_LOCAL_DOMAIN
 - [x] CONFIGURE_HOSTS
-- [ ] CONFIGURE_INITRAMFS_MODULES
+- [x] CONFIGURE_INITRAMFS_MODULES
 - [ ] CONFIGURE_INITRAMFS_HOOKS
 - [x] CONFIGURE_INITRAMFS_COMPRESSION
 - [ ] CONFIGURE_INITIAL_USER
