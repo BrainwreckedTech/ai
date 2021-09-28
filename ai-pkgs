@@ -1242,13 +1242,14 @@ function PACKAGESEL_DISK_MANAGEMENT {
   ##############################################################################
   local -a SUGGESTS DESCRIPS SELSTATE
 
-  SUGGESTS=(gpart gptfdisk parted testdisk)
+  SUGGESTS=(gpart gptfdisk nvme-cli parted testdisk)
   DESCRIPS=('Partition table rescue/guessing tool' 'GPT disk manipulation tool'
-            'Partition manipulation tool'       'Check and undelete partitions')
+            'NVME user space tool for Linux'      'Partition manipulation tool'
+            'Check and undelete partitions')
 
   [[ ${INTENTS[runtime]} == container ]] && \
-    SELSTATE=(off off off off) || SELSTATE=(off on on off)
-  [[ ${INTENTS[purpose]} == rescue ]] && SELSTATE=(on on on on)
+    SELSTATE=(off off off off off) || SELSTATE=(off on on on off)
+  [[ ${INTENTS[purpose]} == rescue ]] && SELSTATE=(on on on on on)
 
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
     "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
