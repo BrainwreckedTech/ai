@@ -613,6 +613,131 @@ function CONFIGURE_STICKY_BIT {
   fi
 }
 
+function CONFIGURE_SUDO {
+  local CFG_FILE="${OSCHROOT}/etc/sudoers"
+  [[ -e "${CFG_FILE}" ]] || return 0
+  ##############################################################################
+  local BAKTITLE="Sudo Configuration"
+  local HELP_MSG="Configure Sudo:"
+  ##############################################################################
+  local EXISTCFG INCL_DIR STR4GREP SELECTED WRITESTR SERCHSTR CFLOCATE SWITCHED
+  local -a SUGGESTS DESCRIPS CONF_STR PREGEXES GREGEXES SELSTATE
+
+  GET_PRIVILEGE # Working with sudo configs requires root access
+
+  # Parse the config file into a variable (ignore commented-out and blank lines)
+  EXISTCFG="$("${BIN[sudo]}" "${BIN[grep]}" -v '^\s*#' "${CFG_FILE}" | "${BIN[grep]}" -v '^$')"
+
+  if [[ ${EXISTCFG} =~ @includedir ]]; then
+    # If the config file specified an @includedir, get configs from those files as well
+    INCL_DIR="$("${BIN[grep]}" 'includedir' <<< "${EXISTCFG}" | "${BIN[cut]}" -d\  -f2)"
+    EXISTCFG+=$'\n' # The trailing newline got stripped out, so add it back in
+    EXISTCFG+="$("${BIN[sudo]}" sh -c "'${BIN[grep]}' -hv '^\s*#' ${OSCHROOT}${INCL_DIR}/*" | "${BIN[grep]}" -v "^\s*$")"
+  fi
+
+  SUGGESTS+=(wheel passprompt passwd_timeout rootpw timestamp_type timestampe_timeout)
+  DESCRIPS+=('Enable members of the wheel group to use sudo'
+             'Set passprompt to "[sudo] password for %p: "'
+             'Set passwd_timeout to 0 (sudo will not time out waiting for a password)'
+             "Require root'\\''s password"
+             'Set timestamp_type to global (not limited to current terminal session)'
+             'Set timestamp_timeout to 10')
+
+  # CONF_STR is basically here to help with search string legibility
+  # The short forms of character classes are vastly easier to read
+
+  CONF_STR+=('%wheel\s*ALL\s*=\s*\(\s*ALL\s*\)\s*ALL'
+             'Defaults\s*passprompt\s*=\s*"\[sudo\] password for %p: "'
+             'Defaults\s*passwd_timeout\s*=\s*0'
+             'Defaults\s*rootpw'
+             'Defaults\s*timestamp_type\s*=\s*global'
+             'Defaults\s*timestamp_timeout\s*=\s*10')
+
+  # We need a special case to handle the ZFS sudo config
+  # The package typically adds a commented-out config
+
+  if "${BIN[sudo]}" sh -c "[ -e '${CFG_FILE}.d/zfs' ]"; then
+    SUGGESTS+=(zfs)
+    DESCRIPS+=('Relax perms for smartctl for `zpool iostat/status -c smart`')
+    CONF_STR+=('ALL\s*ALL\s*=\s*(\s*root\s*)\s*NOPASSWD:\s*/usr/sbin/smartctl -a /dev/\[hsv\]d\[a-z0-9\]*')
+  fi
+
+  # Now we can build search strings for actual use
+
+  for STRING in "${CONF_STR[@]}"; do
+    # This is the big one since bash regex can't use short-form character classes
+    PREGEXES+=("${STRING//\\s/[[:blank:]]}")
+    # The meaning of escaped and unescaped parantheses
+    # in regexes is inversed between bash and grep
+    STR4GREP="${STRING//\\(/(}"
+    GREGEXES+=("${STR4GREP//\\)/)}")
+  done
+
+  for PREGEX in "${PREGEXES[@]}"; do
+    # Now we can set pre-selected states based on what we found in the configs
+    [[ ${EXISTCFG} =~ [[:cntrl:]][[:blank:]]*${PREGEX} ]] && SELSTATE+=(on) || SELSTATE+=(off)
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+  SELECTED="$(</tmp/selection)"
+
+  GET_PRIVILEGE # Call this again just in case the credentials timed out
+
+  for (( LC=0 ; LC<${#SUGGESTS[@]} ; LC++ )); do
+    # Walk through all off the present options
+    SWITCHED=none
+    [[ ${SELECTED} =~ ${SUGGESTS[${LC}]} ]] && [[ ${SELSTATE[${LC}]} == off ]] && SWITCHED=on
+    [[ ! ${SELECTED} =~ ${SUGGESTS[${LC}]} ]] && [[ ${SELSTATE[${LC}]} == on ]] && SWITCHED=off
+
+    if [[ ${SWITCHED} != none ]]; then
+      WRITESTR="${CONF_STR[${LC}]}"   # Derive what to write out based search regex
+      WRITESTR="${WRITESTR//\\s\*/ }" # Convert searches for whitespace to a single space
+      WRITESTR="${WRITESTR// = /=}"   # Remove whitespace around equals sign
+      WRITESTR="${WRITESTR//\\(/(}"   # Remove escaping from opening parenthesis
+      WRITESTR="${WRITESTR//\\)/)}"   # Remove escaping from closing parenthesis
+      WRITESTR="${WRITESTR//( /(}"    # Remove space after opening parenthesis
+      WRITESTR="${WRITESTR// )/)}"    # Remove space before closing parenthesis
+
+      # We need a more-generic search string for the replacement procedure
+      SERCHSTR="${GREGEXES[${LC}]}"
+      # Remove everything after an equals sign so we match
+      # an option regardless of what it was set to previously
+      [[ ${SERCHSTR} =~ Defaults.*= ]] && SERCHSTR="${SERCHSTR%%=*}"
+      # Adjust rootpw to match {runas,root,target}pw
+      [[ ${SERCHSTR} =~ rootpw ]] && SERCHSTR="${SERCHSTR//rootpw/\\(root\\|target\\|runas\\)pw}"
+
+      # Find out if an option can already be found in a
+      # config file regardless of being commented out
+      if "${BIN[sudo]}" "${BIN[grep]}" -q "^\s*#*\s*${SERCHSTR}" "${CFG_FILE}"; then
+        # If we found the option in the main config file, use that
+        CFLOCATE="${CFG_FILE}"
+      elif [[ -n ${INCL_DIR} ]]; then
+        # If not and @includedir was set, search @includedir for the option
+        CFLOCATE="$("${BIN[sudo]}" sh -c "'${BIN[grep]}' -l '\s*#*\s*${SERCHSTR}' ${CFG_FILE}.d/* ")"
+      fi
+
+      if [[ ${SWITCHED} == on ]]; then
+        if [[ -n ${CFLOCATE} ]]; then
+          # If the option was found in an existing config file,
+          # use sed magic to change the option where it was found.
+          "${BIN[sudo]}" "${BIN[sed]}" -i "s&^\s*#*\s*${SERCHSTR}.*&${WRITESTR}&g" "${CFLOCATE}"
+        elif [[ -n ${INCL_DIR} ]]; then
+          # If the option wasn't found even in commented-out status, and @includedir
+          # was set, go ahead and write a new config file under @includedir
+          "${BIN[sudo]}" sh -c "echo '${WRITESTR}' > '${CFG_FILE}.d/${SUGGESTS[${LC}]}'"
+        else
+          # Otherise, append the option to the main config file
+          "${BIN[sudo]}" sh -c "echo '${WRITESTR}' >> '${CFG_FILE}'"
+        fi
+      elif [[ ${SWITCHED} == off ]]; then
+        # The only way and option can be switched off is if it was found to begin with
+        "${BIN[sudo]}" "${BIN[sed]}" -i "s&^\s*#*\s*\(${SERCHSTR}.*\)&# \1&g" "${CFLOCATE}"
+      fi
+    fi
+  done
+}
+
 function CONFIGURE_SYSTEMD_LOGIND_HANDLELIDSWITCH {
   local CFG_FILE="${OSCHROOT}/etc/systemd/logind.conf"
   local CFG_ITEM='HandleLidSwitch'
@@ -815,7 +940,7 @@ function WIZARD_MODE {
   #CONFIGURE_PACMAN_KEYS
   CONFIGURE_NANORC_OPTIONS
   CONFIGURE_NANORC_COLORS
-  #CONFIGURE_SUDO
+  CONFIGURE_SUDO
   CONFIGURE_POLICYKIT_ROOTPW
   CONFIGURE_STICKY_BIT
   #CONFIGURE_NTP

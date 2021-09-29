@@ -31,7 +31,7 @@ TODO: Support is planned for other Linux distributions that can use the `chroot`
 ## `ai-confs`
 Configures the new system.  Does as much work as possible without chrooting in.
 
-STATUS: Work in progress -- about 79% done.
+STATUS: Work in progress -- about 82% done.
 
 - [x] CONFIGURE_FSTAB
 - [x] CONFIGURE_TIMEZONE
@@ -54,7 +54,7 @@ STATUS: Work in progress -- about 79% done.
 - [ ] CONFIGURE_PACMAN_KEYS
 - [x] CONFIGURE_NANORC_OPTIONS
 - [x] CONFIGURE_NANORC_COLORS
-- [ ] CONFIGURE_SUDO
+- [x] CONFIGURE_SUDO
 - [x] CONFIGURE_POLICYKIT_ROOTPW
 - [x] CONFIGURE_STICKY_BIT
 - [ ] CONFIGURE_NTP
