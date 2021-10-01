@@ -475,6 +475,50 @@ function CONFIGURE_NANORC_OPTIONS {
   done
 }
 
+function CONFIGURE_PACMAN_OPTIONS {
+  CFG_FILE="${OSCHROOT}/etc/pacman.conf"
+  ##############################################################################
+  local BAKTITLE="Pacman Options"
+  local HELP_MSG="Select the options to enable:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+  local CONF_OPT SELECTED
+
+  SUGGESTS+=(ILoveCandy UseSyslog Color NoProgressBar CheckSpace VerbosePkgLists ParallelDownloads)
+  DESCRIPS+=('Turn progress bars into pacman eating pellets'
+             'Log action messages through syslog (/var/log/messages)'
+             'Automatically enable colors when output is on tty'
+             'Disable progress bars (for ttys not supporting escape codes)'
+             'Verify adequate available space before installation'
+             'Display verbose package target information in table format'
+             'Enable Concurrent download streams')
+
+  for CONF_OPT in "${SUGGESTS[@]}"; do
+    "${BIN[grep]}" -q "^\s*${CONF_OPT}" "${CFG_FILE}" && SELSTATE+=(on) || SELSTATE+=(off)
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+  SELECTED="$(</tmp/selection)"
+
+  set -x
+  for (( LC=0 ; LC<${#SUGGESTS[@]} ; LC++ )); do
+    if [[ ${SELECTED} =~ ${SUGGESTS[${LC}]} ]]; then
+      if [[ ${SELSTATE[${LC}]} == off ]]; then
+        if "${BIN[grep]}" -q "^\s*#*\s*${SUGGESTS[${LC}]}" "${CFG_FILE}"; then
+          USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*#\+\s*${SUGGESTS[${LC}]}/${SUGGESTS[${LC}]}/g" "${CFG_FILE}"
+        else
+          USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s/Misc options\n/Misc options\n${SUGGESTS[${LC}]}\n/g" "${CFG_FILE}"
+        fi
+      fi
+    else
+      if [[ ${SELSTATE[${LC}]} == on ]]; then
+        USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*${SUGGESTS[${LC}]}/#${SUGGESTS[${LC}]}/g" "${CFG_FILE}"
+      fi
+    fi
+  done
+}
+
 function CONFIGURE_POLICYKIT_ROOTPW {
   local CFG_FILE="${OSCHROOT}/etc/polkit-1/rules.d/49-rootpw_global.rules"
   [[ -e "${CFG_FILE%\/*}" ]] || return 0
@@ -1112,7 +1156,7 @@ function WIZARD_MODE {
   CONFIGURE_INITRAMFS_MODULES
   CONFIGURE_INITRAMFS_HOOKS
   CONFIGURE_INITRAMFS_COMPRESSION
-  #CONFIGURE_PACMAN_OPTIONS
+  CONFIGURE_PACMAN_OPTIONS
   #CONFIGURE_PACMAN_REPOS
   #CONFIGURE_PACMAN_KEYS
   CONFIGURE_NANORC_OPTIONS
