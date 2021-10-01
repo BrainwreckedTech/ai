@@ -1073,12 +1073,12 @@ function SET_USER_SHELL {
   for SHELLBIN in "${SUGGESTS[@]}"; do
     case "${SHELLBIN}" in
       *bash) DESCRIPS+=('GNU Bourne Again Shell');;
-       *csh) DESCRIPS+=('Berkely C Shell');;
       *dash) DESCRIPS+=('Descendant of Almquist Shell');;
       *fish) DESCRIPS+=('Friendly Interactive Shell');;
+      *tcsh) DESCRIPS+=('Tenex C Shell');;
+       *csh) DESCRIPS+=('Berkely C Shell');;
        *ksh) DESCRIPS+=('AT&T Korn Shell');;
        *osh) DESCRIPS+=('Oil Shell');;
-      *tcsh) DESCRIPS+=('Tenex C Shell');;
        *zsh) DESCRIPS+=('Z Shell');;
        */nu) DESCRIPS+=('Nu Shell');;
        */sh) DESCRIPS+=('POSIX Bourne Shell');;
