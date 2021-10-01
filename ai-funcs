@@ -27,7 +27,7 @@ function GET_COMMAND {
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in cut find fold grep lspci printf sed sort sudo stty tr wc; do
+for CMD in cut find fold grep lspci printf rm sed sort sudo stty tr wc; do
   BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
@@ -324,7 +324,7 @@ function DIALOG_DIRECTORY_SELECT {
     [[ ${BIN[dialog]} =~ zenity ]] || COMMAND+=" '${ITMSLCTS[${PC}]}'"
   done
 
-  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
 }
 
@@ -343,7 +343,7 @@ function DIALOG_FILE_SELECT {
     [[ ${BIN[dialog]} =~ zenity ]] || COMMAND+=" '${ITMSLCTS[${PC}]}'"
   done
 
-  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
 }
 
@@ -386,7 +386,7 @@ function DIALOG_MULTI_SELECT {
     [[ ${BIN[dialog]} =~ zenity ]] || COMMAND+=" '${ITMSLCTS[${PC}]}'"
   done
 
-  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
 }
 
@@ -399,7 +399,7 @@ function DIALOG_INPUT {
 
   [[ ${BIN[dialog]} =~ zenity ]] && D_SWITCH='--entry --text='
 
-  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
   COMMAND="$(DIALOG_MAIN_CALL) "
   COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
   COMMAND+="${D_SWITCH}'${HELP_MSG}' "
@@ -439,7 +439,7 @@ function DIALOG_RANGE {
      *zenity) D_SWITCH='--scale --text=';;
   esac
 
-  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
   COMMAND="$(DIALOG_MAIN_CALL) "
   COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
   COMMAND+="${D_SWITCH}'${HELP_MSG}' " \
@@ -468,7 +468,7 @@ function DIALOG_TEXT {
 
   [[ ${BIN[dialog]} =~ zenity ]] && D_SWITCH='--text-info --filename='
 
-  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
   COMMAND="$(DIALOG_MAIN_CALL) "
   COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
   COMMAND+="${D_SWITCH}'${TEXTFILE}' "
@@ -553,7 +553,7 @@ function DIALOG_SINGLE_SELECT {
     [[ ${BIN[dialog]} =~ Xdialog ]] || [[ ${BIN[dialog]} =~ kdialog ]] && COMMAND+=" '${SELSTATE[${PC}]}'"
   done
 
-  rm /tmp/selection 2> /dev/null; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
   echo "${COMMAND} ${DLGREDIR} /tmp/selection" >> /tmp/aipdebug
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
 }
