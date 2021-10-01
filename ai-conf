@@ -12,7 +12,7 @@ declare OSCHROOT
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in cat cp date genfstab head ip ln readlink rename stat tail touch; do
+for CMD in cat cp date genfstab head ip ln passwd readlink rename stat tail touch useradd usermod; do
   BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
@@ -913,8 +913,187 @@ function CONFIGURE_VIDEO_ACCELERATION {
   fi
 }
 
-function CREATE_USER {
-  :
+function CREATE_NEW_USERS {
+  while true; do
+    ############################################################################
+    local BAKTITLE="Create New User"
+    local HELP_MSG="Enter username:"
+    ############################################################################
+    local SELECTED
+
+    while true; do
+      DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "" || return 1
+      SELECTED=$(</tmp/selection)
+      if "${BIN[grep]}" -q "^${SELECTED}:" "${OSCHROOT}/etc/passwd"; then
+        DIALOG_MSGBOX "${TITLEBAR}" "${BAKTITLE}" "User ${SELECTED} already exists."
+      else
+        break
+      fi
+    done
+
+    ############################################################################
+    HELP_MSG="Use private group?\n"
+    HELP_MSG+="(Selecting no will make '\\''users'\\'' the primary group.)"
+    ############################################################################
+
+    if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+      USE_PRIVILEGE "${BIN[useradd]}" -R "${OSCHROOT}" -m -U "${SELECTED}"
+    else
+      USE_PRIVILEGE "${BIN[useradd]}" -R "${OSCHROOT}" -m -g users "${SELECTED}"
+    fi
+  done
+}
+
+function SELECT_USER {
+  ##############################################################################
+  local BAKTITLE="${1}"
+  local HELP_MSG="Select user to modify:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+  local INAME PASWD USRID PGIDN USRLN HMDIR SHELL
+  local -a USERNAME USRIDNUM USRPSWRD USERPGRP USERGRPS USRLNGNM USRSHELL
+  local USERNAME USRIDNUM
+
+  GET_PRIVILEGE
+
+  while IFS=':' read -r UNAME PASWD USRID PGIDN USRLN HMDIR SHELL; do
+    [[ ${UNAME} == root ]] && [[ ${BAKTITLE} =~ Group ]] && continue
+    USERNAME+=("${UNAME}")
+    USRIDNUM+=("${USRID}")
+    if [[ ${PASWD} == x ]]; then
+      PWSTR="$("${BIN[sudo]}" "${BIN[grep]}" "${UNAME}" "${OSCHROOT}/etc/shadow" | "${BIN[cut]}" -d: -f2)"
+      case "${PWSTR}" in
+                 *'!'*) USRPSWRD+=('locked out');;
+                '$1$'*) USRPSWRD+=('password-protected (MD5)');;
+        '$2'[abxy]'$'*) USRPSWRD+=('password-protected (Blowfish)');;
+                '$5$'*) USRPSWRD+=('password-protected (SHA256)');;
+                '$6$'*) USRPSWRD+=('password-protected (SHA512)');;
+                     *) USRPSWRD+=('unprotected')
+      esac
+    fi
+    USERPGRP+=("$("${BIN[grep]}" ":${PGIDN}:" "${OSCHROOT}/etc/group"  | "${BIN[cut]}" -d: -f1)")
+    USERGRPS+=("$("${BIN[grep]}" "${UNAME}" "${OSCHROOT}/etc/group" | "${BIN[cut]}" -d: -f1 | tr '\n' ' ' | sed 's/ $//g')")
+    USRLNGNM+=("${USRLN}")
+    USRHMDIR+=("${HMDIR}")
+    USRSHELL+=("${SHELL}")
+  done < <("${BIN[grep]}" '/home\|root' "${OSCHROOT}/etc/passwd")
+
+  for (( LC=0 ; LC<${#USERNAME[@]} ; LC++ )); do
+    [[ -z ${USERGRPS[${LC}]} ]] && PGROUPS='no other groups' || PGROUPS="${USERGRPS[${LC}]// /, }"
+    DESCRIPS+=("$(printf 'is %s to use %s in %s' \
+      "${USRPSWRD[${LC}]}" "${USRSHELL[${LC}]}" "${USRHMDIR[${LC}]}")")
+    SUGGESTS+=("${USERNAME[${LC}]}:${USERPGRP[${LC}]}")
+  done
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' '' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS'
+  RETVALUE="${?}"
+  "${BIN[sed]}" -i 's/:.*//g' /tmp/selection
+  return "${RETVALUE}"
+}
+
+function SET_USER_GROUPS {
+  ##############################################################################
+  local BAKTITLE="Group Membership"
+  local HELP_MSG="Select group membership:"
+  ##############################################################################
+  local USERNAME
+  local -a ADDLGRPS SUGGESTS DESCRIPS VLD_GRPS VLD_DSCS
+
+  VLD_GRPS=(audio disk floppy ftp http input libvirt lp kvm optical rfkill scanner storage sys uucp video wheel)
+  VLD_DSCS=('Direct access to sound hardware, used by JACK to give realtime permissions'
+            'Access to block devices not affected by optical, floppy, or storage'
+            'Access to floppy drives'
+            'Access to files served by an FTP server'
+            'Access to files served by an HTTP server'
+            'Access to input devices'
+            'Access to libvirt virtual machines (GNOME boxes, etc.)'
+            'Access to parallel ports'
+            'Access to KVM virtual machines'
+            'Access to optical drives'
+            'Right to control power to wireless devices'
+            'Access to scanner hardware'
+            'Access to removable drives not affected by floppy or optical'
+            'Right to administer CUPS printers'
+            'Access to serial ports'
+            'Access to video capture and acceleration hardware'
+            'Administation group for sudo')
+
+  for (( LC=0 ; LC<${#VLD_GRPS[@]} ; LC++ )); do
+    if "${BIN[grep]}" -q "${VLD_GRPS[${LC}]}" "${OSCHROOT}/etc/group"; then
+      SUGGESTS+=("${VLD_GRPS[${LC}]}")
+      DESCRIPS+=("${VLD_DSCS[${LC}]}")
+    fi
+  done
+
+  while true; do
+    SELECT_USER "${BAKTITLE}" && USERNAME="$(</tmp/selection)" || return 1
+    unset SELSTATE
+    for GRP_NAME in "${SUGGESTS[@]}"; do
+      "${BIN[grep]}" -q "${GRP_NAME}.*${USERNAME}" "${OSCHROOT}/etc/group" \
+        && SELSTATE+=(on) || SELSTATE+=(off)
+    done
+    if DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+      "${HELP_MSG/:/ for ${USERNAME}:}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'; then
+      ADDLGRPS="$(</tmp/selection)"
+      USE_PRIVILEGE "${BIN[usermod]}" -R "${OSCHROOT}" -G "${ADDLGRPS// /,}" "${USERNAME}"
+    fi
+  done
+}
+
+function SET_USER_PASSWORD {
+  ##############################################################################
+  local BAKTITLE="Set User Password"
+  local HELP_MSG="Enter new password:"
+  ##############################################################################
+  local USERNAME PASSWORD
+  while true; do
+    SELECT_USER "${BAKTITLE}" && USERNAME="$(</tmp/selection)" || return 1
+    if DIALOG_PASSWORD "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG/:/ for ${USERNAME}:}" ""; then
+      PASSWORD=$(</tmp/selection)
+      ${BIN[rm]} /tmp/selection
+      USE_PRIVILEGE sh -c "'${BIN[printf]}' '%s\n%s\n' '${PASSWORD}' '${PASSWORD}' | '${BIN[passwd]}' -R '${OSCHROOT}' '${USERNAME}'"
+    fi
+  done
+}
+
+function SET_USER_SHELL {
+  ##############################################################################
+  local BAKTITLE="Login Shell"
+  local HELP_MSG="Select login shell:"
+  ##############################################################################
+  local USERNAME
+
+  if "${BIN[grep]}" -q '/bin/zsh' "${OSCHROOT}/etc/shells"; then
+    IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[grep]}" -v '^\s*#\|^$\|git-shell\|/usr/bin/zsh' "${OSCHROOT}/etc/shells")
+  else
+    IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[grep]}" -v '^\s*#\|^$\|git-shell' "${OSCHROOT}/etc/shells")
+  fi
+
+  for SHELLBIN in "${SUGGESTS[@]}"; do
+    case "${SHELLBIN}" in
+      *bash) DESCRIPS+=('GNU Bourne Again Shell');;
+       *csh) DESCRIPS+=('Berkely C Shell');;
+      *dash) DESCRIPS+=('Descendant of Almquist Shell');;
+      *fish) DESCRIPS+=('Friendly Interactive Shell');;
+       *ksh) DESCRIPS+=('AT&T Korn Shell');;
+       *osh) DESCRIPS+=('Oil Shell');;
+      *tcsh) DESCRIPS+=('Tenex C Shell');;
+       *zsh) DESCRIPS+=('Z Shell');;
+       */nu) DESCRIPS+=('Nu Shell');;
+       */sh) DESCRIPS+=('POSIX Bourne Shell');;
+    esac
+  done
+
+  while true; do
+    SELECT_USER "${BAKTITLE}" && USERNAME="$(</tmp/selection)" || return 1
+    CURSHELL="$("${BIN[grep]}" "${USERNAME}" "${OSCHROOT}/etc/passwd" | "${BIN[cut]}" -d: -f7)"
+    if DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+      "${CURSHELL}" "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS'; then
+      SELECTED="$(</tmp/selection)"
+      USE_PRIVILEGE "${BIN[sed]}" -i "s|:${CURSHELL}$|:${SELECTED}|g" "${OSCHROOT}/etc/passwd"
+    fi
+  done
 }
 
 function WIZARD_MODE {
@@ -933,8 +1112,6 @@ function WIZARD_MODE {
   CONFIGURE_INITRAMFS_MODULES
   CONFIGURE_INITRAMFS_HOOKS
   CONFIGURE_INITRAMFS_COMPRESSION
-  #CONFIGURE_INITIAL_USER
-  #CONFIGURE_PASSWORDS
   #CONFIGURE_PACMAN_OPTIONS
   #CONFIGURE_PACMAN_REPOS
   #CONFIGURE_PACMAN_KEYS
@@ -953,6 +1130,10 @@ function WIZARD_MODE {
   CONFIGURE_SYSTEMD_RESOLVED
   CONFIGURE_DEFAULT_EDITOR
   CONFIGURE_VIDEO_ACCELERATION
+  CREATE_NEW_USERS
+  SET_USER_PASSWORD
+  SET_USER_GROUPS
+  SET_USER_SHELL
 }
 
 while true; do

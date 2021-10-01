@@ -425,6 +425,27 @@ function DIALOG_MSGBOX {
   eval "${COMMAND}"
 }
 
+function DIALOG_PASSWORD {
+  local MAIN_TTL="${1}"
+  local BACK_TTL="${2}"
+  local HELP_MSG="${3}"
+  local INIT_TXT="${4}"
+  local D_SWITCH
+
+  case "${BIN[dialog]}" in
+    *kdialog|*zenity) D_SWITCH='--password ' ;;
+             *dialog) D_SWITCH='--no-cancel --insecure --passwordbox ';;
+  esac
+
+  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="${D_SWITCH}'${HELP_MSG}' "
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'input' "${HELP_MSG}" '' '') '${INIT_TXT}'"
+  eval "${COMMAND} ${DLGREDIR} /tmp/selection"
+  return ${?}
+}
+
 function DIALOG_RANGE {
   local MAIN_TTL=${1}
   local BACK_TTL=${2}

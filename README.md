@@ -31,7 +31,7 @@ TODO: Support is planned for other Linux distributions that can use the `chroot`
 ## `ai-confs`
 Configures the new system.  Does as much work as possible without chrooting in.
 
-STATUS: Work in progress -- about 82% done.
+STATUS: Work in progress -- about 88% done.
 
 - [x] CONFIGURE_FSTAB
 - [x] CONFIGURE_TIMEZONE
@@ -47,8 +47,6 @@ STATUS: Work in progress -- about 82% done.
 - [x] CONFIGURE_INITRAMFS_MODULES
 - [x] CONFIGURE_INITRAMFS_HOOKS
 - [x] CONFIGURE_INITRAMFS_COMPRESSION
-- [ ] CONFIGURE_INITIAL_USER
-- [ ] CONFIGURE_PASSWORDS
 - [ ] CONFIGURE_PACMAN_OPTIONS
 - [ ] CONFIGURE_PACMAN_REPOS
 - [ ] CONFIGURE_PACMAN_KEYS
@@ -67,3 +65,7 @@ STATUS: Work in progress -- about 82% done.
 - [x] CONFIGURE_SYSTEMD_RESOLVED
 - [x] CONFIGURE_DEFAULT_EDITOR
 - [x] CONFIGURE_VIDEO_ACCELERATION
+- [x] CREATE_NEW_USERS
+- [x] SET_USER_PASSWORD
+- [x] SET_USER_GROUPS
+- [x] SET_USER_SHELL
