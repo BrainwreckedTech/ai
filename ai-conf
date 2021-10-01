@@ -626,7 +626,7 @@ function CONFIGURE_SUDO {
   GET_PRIVILEGE # Working with sudo configs requires root access
 
   # Parse the config file into a variable (ignore commented-out and blank lines)
-  EXISTCFG="$("${BIN[sudo]}" "${BIN[grep]}" -v '^\s*#' "${CFG_FILE}" | "${BIN[grep]}" -v '^$')"
+  EXISTCFG="$("${BIN[sudo]}" "${BIN[grep]}" -v '^\s*#\|^$' "${CFG_FILE}")"
 
   if [[ ${EXISTCFG} =~ @includedir ]]; then
     # If the config file specified an @includedir, get configs from those files as well
