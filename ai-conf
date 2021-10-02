@@ -12,7 +12,7 @@ declare OSCHROOT
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in cat cp date genfstab head ip ln passwd readlink rename stat tail touch useradd usermod; do
+for CMD in cp curl date genfstab head ip ln passwd readlink rename stat tail tar useradd usermod; do
   BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 

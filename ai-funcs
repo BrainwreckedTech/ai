@@ -27,7 +27,7 @@ function GET_COMMAND {
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in cut find fold grep lspci printf rm sed sort sudo stty tr wc; do
+for CMD in cat cut find fold grep lscpu lspci printf rm sed sort sudo stty touch tr wc; do
   BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
@@ -35,16 +35,16 @@ done
 # System information
 ################################################################################
 declare -r -A SYSTEM=(
-  [cpu-arch]="$(lscpu | grep 'Architecture' | sed 's/ \+//g' | cut -d: -f2)"
-  [cpu-vndr]="$(lscpu | grep 'Vendor ID' | sed 's/ \+//g' | cut -d: -f2)"
-  [cpu-bits]="$(lscpu | grep 'op-mode' | sed 's/.* //g;s/-bit//g')"
+  [cpu-arch]="$("${BIN[lscpu]}" | "${BIN[grep]}" 'Architecture' | "${BIN[sed]}" 's/ \+//g' | cut -d: -f2)"
+  [cpu-vndr]="$("${BIN[lscpu]}" | "${BIN[grep]}" 'Vendor ID' | "${BIN[sed]}" 's/ \+//g' | cut -d: -f2)"
+  [cpu-bits]="$("${BIN[lscpu]}" | "${BIN[grep]}" 'op-mode' | "${BIN[sed]}" 's/.* //g;s/-bit//g')"
   [fw-type]="$([ -d /sys/firmware/efi ] && echo uefi || echo bios)"
-  [fw-bits]="$([ -e /sys/firmware/efi/fw_platform_size ] && cat /sys/firmware/efi/fw_platform_size || echo 16)"
+  [fw-bits]="$([ -e /sys/firmware/efi/fw_platform_size ] && "${BIN[cat]}" /sys/firmware/efi/fw_platform_size || echo 16)"
   [gpu-uni]="$([[ $("${BIN[lspci]}" | "${BIN[grep]}" 'VGA' | "${BIN[cut]}" -d: -f1) -eq 0 ]] && echo 1 || echo 0)"
-  [ram-os]="$(for MEMORIES in /sys/devices/system/memory/memory*; do [[ $(< "${MEMORIES}/online") == 1 ]] && ((TOTALRAM+=0x$(cat /sys/devices/system/memory/block_size_bytes))); done; echo $((TOTALRAM/1024**2)))"
+  [ram-os]="$(for MEMORIES in /sys/devices/system/memory/memory*; do [[ $(< "${MEMORIES}/online") == 1 ]] && ((TOTALRAM+=0x$("${BIN[cat]}" /sys/devices/system/memory/block_size_bytes))); done; echo $((TOTALRAM/1024**2)))"
 )
-declare -r -i MAX_HIGH="$(( $(${BIN[stty]} size | ${BIN[cut]} -d\  -f1) - 1))"
-declare -r -i MAX_WIDE="$(( $(${BIN[stty]} size | ${BIN[cut]} -d\  -f2) * 75 / 100 - 4))"
+declare -r -i MAX_HIGH="$(( $("${BIN[stty]}" size | "${BIN[cut]}" -d\  -f1) - 1))"
+declare -r -i MAX_WIDE="$(( $("${BIN[stty]}" size | "${BIN[cut]}" -d\  -f2) * 75 / 100 - 4))"
 ################################################################################
 # Find a dialog
 ################################################################################
@@ -324,7 +324,7 @@ function DIALOG_DIRECTORY_SELECT {
     [[ ${BIN[dialog]} =~ zenity ]] || COMMAND+=" '${ITMSLCTS[${PC}]}'"
   done
 
-  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
 }
 
@@ -343,7 +343,7 @@ function DIALOG_FILE_SELECT {
     [[ ${BIN[dialog]} =~ zenity ]] || COMMAND+=" '${ITMSLCTS[${PC}]}'"
   done
 
-  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
 }
 
@@ -386,7 +386,7 @@ function DIALOG_MULTI_SELECT {
     [[ ${BIN[dialog]} =~ zenity ]] || COMMAND+=" '${ITMSLCTS[${PC}]}'"
   done
 
-  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
 }
 
@@ -399,7 +399,7 @@ function DIALOG_INPUT {
 
   [[ ${BIN[dialog]} =~ zenity ]] && D_SWITCH='--entry --text='
 
-  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
   COMMAND="$(DIALOG_MAIN_CALL) "
   COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
   COMMAND+="${D_SWITCH}'${HELP_MSG}' "
@@ -437,7 +437,7 @@ function DIALOG_PASSWORD {
              *dialog) D_SWITCH='--no-cancel --insecure --passwordbox ';;
   esac
 
-  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
   COMMAND="$(DIALOG_MAIN_CALL) "
   COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
   COMMAND+="${D_SWITCH}'${HELP_MSG}' "
@@ -460,7 +460,7 @@ function DIALOG_RANGE {
      *zenity) D_SWITCH='--scale --text=';;
   esac
 
-  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
   COMMAND="$(DIALOG_MAIN_CALL) "
   COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
   COMMAND+="${D_SWITCH}'${HELP_MSG}' " \
@@ -489,7 +489,7 @@ function DIALOG_TEXT {
 
   [[ ${BIN[dialog]} =~ zenity ]] && D_SWITCH='--text-info --filename='
 
-  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
   COMMAND="$(DIALOG_MAIN_CALL) "
   COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
   COMMAND+="${D_SWITCH}'${TEXTFILE}' "
@@ -574,7 +574,7 @@ function DIALOG_SINGLE_SELECT {
     [[ ${BIN[dialog]} =~ Xdialog ]] || [[ ${BIN[dialog]} =~ kdialog ]] && COMMAND+=" '${SELSTATE[${PC}]}'"
   done
 
-  "${BIN[rm]}" -f /tmp/selection; touch /tmp/selection
+  "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
   echo "${COMMAND} ${DLGREDIR} /tmp/selection" >> /tmp/aipdebug
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
 }
