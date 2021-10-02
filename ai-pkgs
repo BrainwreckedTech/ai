@@ -1436,7 +1436,7 @@ function PACKAGESEL_FILESYSTEMS_OTHER {
 function PACKAGESEL_GIMP_HELP {
   ##############################################################################
   local -r BAKTITLE="GIMP Help"
-  local -r HELP_MSG="Choose lnaguage for GIMP help."
+  local -r HELP_MSG="Choose lanaguage for GIMP help."
   ##############################################################################
   local -a SUGGESTS DESCRIPS SELECTNS
 
