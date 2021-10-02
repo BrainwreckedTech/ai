@@ -11,7 +11,7 @@ declare -a BROWSERS_BLINK BROWSERS_GECKO BROWSERS_WBKT2GTK BROWSERS_QTWEBKIT
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in curl pacman pacstrap reflector xargs; do
+for CMD in curl nmap pacman pacstrap reflector xargs; do
     BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
@@ -411,13 +411,13 @@ function NETWORK_SCAN {
   case "${BIN[dialog]}" in
     */dialog)
       ${BIN[dialog]} --infobox "${HELP_MSG}" 3 "${DLG_WIDE}"
-      nmap -p "${PORTNMBR}" -oG - "${IP_RANGE}" | grep -q open
+      "${BIN[nmap]}" -p "${PORTNMBR}" -oG - "${IP_RANGE}" | "${BIN[grep]}" -q open
       RETVALUE="${?}"
       ;;
     */Xdialog)
       rm -f /tmp/selection
       while true; do
-        nmap -p "${PORTNMBR}" -oG - "${IP_RANGE}" | grep -q open && touch /tmp/selection
+        "${BIN[nmap]}" -p "${PORTNMBR}" -oG - "${IP_RANGE}" | "${BIN[grep]}" -q open && "${BIN[touch]}" /tmp/selection
         echo 'XXXX'
         break
       done | ${BIN[dialog]} --title "${TITLEBAR}" --backtitle "${BAKTITLE}" \
@@ -425,7 +425,7 @@ function NETWORK_SCAN {
       [[ -e /tmp/selection ]] && RETVALUE=0 || RETVALUE=1
       ;;
     *)
-      nmap -p "${PORTNMBR}" -oG - "${IP_RANGE}" | grep -q open
+      "${BIN[nmap]}" -p "${PORTNMBR}" -oG - "${IP_RANGE}" | "${BIN[grep]}" -q open
       RETVALUE="${?}"
       ;;
   esac
