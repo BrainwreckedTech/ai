@@ -501,7 +501,6 @@ function CONFIGURE_PACMAN_OPTIONS {
     "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
   SELECTED="$(</tmp/selection)"
 
-  set -x
   for (( LC=0 ; LC<${#SUGGESTS[@]} ; LC++ )); do
     if [[ ${SELECTED} =~ ${SUGGESTS[${LC}]} ]]; then
       if [[ ${SELSTATE[${LC}]} == off ]]; then
