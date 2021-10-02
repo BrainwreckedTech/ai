@@ -518,6 +518,71 @@ function CONFIGURE_PACMAN_OPTIONS {
   done
 }
 
+function CONFIGURE_PACMAN_REPOS {
+  CFG_FILE="${OSCHROOT}/etc/pacman.conf"
+  ##############################################################################
+  local BAKTITLE="Pacman Repos"
+  local HELP_MSG="Select the repos to enable:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+  local CONF_OPT SELECTED
+
+  SUGGESTS+=(core extra community multilib archzfs zfs-linux chaotic-aur andontie-aur)
+  DESCRIPS+=('Packages for booting, networking, building, filesystems, and system setup.'
+             'Packages that do not fit into the definition of core (Xorg, browsers, etc.).'
+             'Packages that have been adopted by Trusted Users from the Arch User Repository.'
+             '32-bit software and libraries for 64-bit systems.'
+             'Packages for ZFS on Arch Linux.'
+             'Kernel archive for for when the official repos pull ahead of archzfs.'
+             'Automated builds of AUR packages submitted by the community'
+             'Automated builds of AUR packages submitted by the community')
+
+  for CONF_OPT in "${SUGGESTS[@]}"; do
+    "${BIN[grep]}" -qPzo "\n\[${CONF_OPT}\]\n(Include|Server)\s*=\s*" "${CFG_FILE}" && SELSTATE+=(on) || SELSTATE+=(off)
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+  SELECTED="$(</tmp/selection)"
+
+  set -x
+  for (( LC=0 ; LC<${#SUGGESTS[@]} ; LC++ )); do
+    if [[ ${SELECTED} =~ ${SUGGESTS[${LC}]} ]]; then
+      if [[ ${SELSTATE[${LC}]} == off ]]; then
+        if "${BIN[grep]}" -qPzo "\n\#\[${SUGGESTS[${LC}]}\]\n#(Include|Server)\s*=\s*" "${CFG_FILE}"; then
+          USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s/\n\#\[${SUGGESTS[${LC}]}\]\n#\(Include\|Server\)\s*=\s*/\n\[${SUGGESTS[${LC}]}\]\n\1 = /g" "${CFG_FILE}"
+        else
+          case "${SUGGESTS[${LC}]}" in
+                 archzfs) REPOLINE='Include = /etc/pacman.d/archzfs-mirrorlist';;
+              zfs-linux*) REPOLINE='Server = http://kernels.archzfs.com/$repo/';;
+             chaotic-aur) REPOLINE='Include = /etc/pacman.d/chaotic-mirrorlist';;
+            andontie-aur) REPOLINE='Server = https://aur.andontie.net/$arch';;
+          esac
+          USE_PRIVILEGE sh -c "'${BIN[printf]}' '[%s]\n%s\n\n' '${SUGGESTS[${LC}]}' '${REPOLINE}' >> '${OSCHROOT}/etc/pacman.conf'"
+          if [[ ${REPOLINE} =~ Include ]]; then
+            if ! [[ -e ${REPOLINE##*=} ]]; then
+              case "${REPOLINE##*=}" in
+                *chaotic*)
+                  DWNLDURI='https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
+                  USE_PRIVILEGE sh -c "'${BIN[curl]}' -s -L '${DWNLDURI}' | '${BIN[tar]}' -I zstd -C '${OSCHROOT}' -xf - etc/pacman.d/chaotic-mirrorlist"
+                  ;;
+                *archzfs*)
+                  DWNLDURI='https://github.com/archzfs/archzfs/wiki'
+                  USE_PRIVILEGE sh -c "'${BIN[curl]}' -s -L  '${DWNLDURI}' | '${BIN[sed]}' ':a;N;\$!ba;s|.*<code>\(\[archzfs\]\n\(Server = [0-9a-z:/.$]*\n\)\{3,\}\)</code>.*|\1|g;' > '${OSCHROOT}/etc/pacman.d/archzfs-mirrorlist'"
+                  ;;
+              esac
+            fi
+          fi
+        fi
+      fi
+    else
+      if [[ ${SELSTATE[${LC}]} == on ]]; then
+        USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s/\n\[${SUGGESTS[${LC}]}\]\n\(Include\|Server\)\s*=\s*/\n\#[${SUGGESTS[${LC}]}\]\n#\1 = /g" "${CFG_FILE}"
+      fi
+    fi
+  done
+}
+
 function CONFIGURE_POLICYKIT_ROOTPW {
   local CFG_FILE="${OSCHROOT}/etc/polkit-1/rules.d/49-rootpw_global.rules"
   [[ -e "${CFG_FILE%\/*}" ]] || return 0
@@ -1156,7 +1221,7 @@ function WIZARD_MODE {
   CONFIGURE_INITRAMFS_HOOKS
   CONFIGURE_INITRAMFS_COMPRESSION
   CONFIGURE_PACMAN_OPTIONS
-  #CONFIGURE_PACMAN_REPOS
+  CONFIGURE_PACMAN_REPOS
   #CONFIGURE_PACMAN_KEYS
   CONFIGURE_NANORC_OPTIONS
   CONFIGURE_NANORC_COLORS
