@@ -12,8 +12,8 @@ declare OSCHROOT
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in cp curl date genfstab head ip ln pacman-key passwd \
-  readlink rename stat systemctl tail tar useradd usermod; do
+for CMD in cp curl date genfstab head ip ln localedef pacman-key \
+  passwd readlink rename stat systemctl tail tar useradd usermod; do
     BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
@@ -386,6 +386,7 @@ function CONFIGURE_LOCALE_AVAILABILITY {
       USE_PRIVILEGE "${BIN[sed]}" -i "s/^${LOCALE}.UTF-8 UTF-8/#${LOCALE}.UTF-8 UTF-8/g" "${CFG_FILE}"
     fi
   done
+  GENERATE_LOCALES
 }
 
 function CONFIGURE_LOCALE_COLLATION {
@@ -1284,6 +1285,45 @@ function ENABLE_SYSTEMD_SERVICES {
   done
 }
 
+function GENERATE_LOCALES {
+  # This is basically a copy of Arch Linux's locale-gen,
+  # slightly modified to work on chroots
+  local CHARSET LOCALE LOCALEGEN LOCALES
+  set -e
+
+  LOCALEGEN="${OSCHROOT}/etc/locale.gen"
+  LOCALES="${OSCHROOT}/usr/share/i18n/locales"
+
+  { [[ -f ${LOCALEGEN} ]] && [[ -s ${LOCALEGEN} ]]; } || return 0;
+
+  USE_PRIVILEGE "${BIN[rm]}" -rf "${OSCHROOT}/usr/lib/locale/"*
+
+  umask 022
+
+  echo 'Generating locales...'
+  while read -r LOCALE CHARSET; do \
+    case "${LOCALE}" in
+      \#*) continue;;
+       "") continue;;
+    esac
+    if [[ -n "${LOCALE}" ]] && [[ -n "${CHARSET}" ]]; then
+      OUTPUT1="$(echo "${LOCALE}" | sed 's/\([^.\@]*\).*/\1/')"
+      OUTPUT2="$(echo "${LOCALE}" | sed 's/\([^\@]*\)\(\@.*\)*/\2/')"
+      "${BIN[printf]}" '%s.%s%s...' "${OUTPUT1}" "${CHARSET}" "${OUTPUT2}"
+      if [[ -f ${LOCALES}/${LOCALE} ]]; then
+        INPUT="${LOCALE}"
+      else
+        INPUT="$(echo ${LOCALE} | sed 's/\([^.]*\)[^@]*\(.*\)/\1\2/')"
+      fi
+      USE_PRIVILEGE "${BIN[localedef]}" -i "${INPUT}" -c -f "${CHARSET}" -A "${OSCHROOT}/usr/share/locale/locale.alias" "${LOCALE}"
+      echo ' done'
+    else
+      echo "error: Bad entry '${LOCALE} ${CHARSET}'"
+    fi
+  done < "${LOCALEGEN}"
+  set +e
+}
+
 function SELECT_USER {
   ##############################################################################
   local BAKTITLE="${1}"
@@ -1485,7 +1525,6 @@ done
 
 echo "FINALIZING SETUP"
 
-"${BIN[arch-chroot]}" "${OSCHROOT}" 'locale-gen'
 "${BIN[arch-chroot]}" "${OSCHROOT}" 'mkinitcpio -P'
 
 exit 0
