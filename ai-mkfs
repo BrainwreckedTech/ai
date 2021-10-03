@@ -78,7 +78,7 @@ function GET_PARTITION_NAME {
 function TAB_PAD {
   local STRING="${1}"
   local SPACES="${2}"
-  
+
   TABS=$(( ( SPACES - ${#STRING} + 7 ) / 8 ))
   PADDING=$(printf '%0.s\t' $(seq 1 ${TABS}))
   echo "${STRING}${PADDING}"
@@ -252,7 +252,7 @@ function SELECT_DEVICE {
   DEV_NAME="$(</tmp/selection)"
   DEV_NAME="${DEV_NAME#\/dev\/}"
 }
-  
+
 function SELECT_PARTITION_SIMPLE {
   ##############################################################################
   local BAKTITLE="Partition Formatting"
@@ -301,8 +301,7 @@ function SELECT_PARTITION_ADVANCED {
 function SELECT_FORMAT_SIMPLE {
   local -a TAG_VALS DESCRIPS
   local -i DLG_HIGH=0 DLG_WIDE=0 LST_HIGH=0
-  local FDEFAULT FS_VALID 
-  
+  local FDEFAULT FS_VALID
 
   case "${PRT_TYPE["${PARTNAME}"]}" in
     linux)
@@ -396,7 +395,7 @@ function FINALIZE {
         --geometry "${GUI_WIDE}x${GUI_HIGH}" --progressbar 'Starting...' "${WRKSTEPS}")
       for (( WORKSTEP=1; WORKSTEP<WRKSTEPS; WORKSTEP++ )); do
         qdbus "${DBUS_REF% *}" "${DBUS_REF#* }" setLabelText "${SCRIPT["$((WORKSTEP-1))"]%% <<<*}" > /dev/null
-        echo "${SEP_LINE}${SCRIPT["$((WORKSTEP-1))"]}"$'\n'"${SEP_LINE}" >> /tmp/ph-debug 
+        echo "${SEP_LINE}${SCRIPT["$((WORKSTEP-1))"]}"$'\n'"${SEP_LINE}" >> /tmp/ph-debug
         qdbus "${DBUS_REF% *}" "${DBUS_REF#* }" Set "" value "${WORKSTEP}" > /dev/null
         eval "${BIN[sudo]} -A ${SCRIPT["$((WORKSTEP-1))"]} 2>&1" >> /tmp/ph-debug
       done
@@ -486,5 +485,5 @@ function WIZARD_MODE {
 ################################################################################
 
 while true; do
-  WIZARD_MODE || exit 1 
+  WIZARD_MODE || exit 1
 done

@@ -659,7 +659,7 @@ function FINALIZE {
         --geometry "${GUI_WIDE}x${GUI_HIGH}" --progressbar 'Starting...' "${WRKSTEPS}")
       for (( WORKSTEP=1; WORKSTEP<WRKSTEPS; WORKSTEP++ )); do
         qdbus "${DBUS_REF% *}" "${DBUS_REF#* }" setLabelText "${SCRIPT]%% <<<*}" > /dev/null
-        echo "${SEP_LINE}${SCRIPT}"$'\n'"${SEP_LINE}" >> /tmp/ph-debug 
+        echo "${SEP_LINE}${SCRIPT}"$'\n'"${SEP_LINE}" >> /tmp/ph-debug
         qdbus "${DBUS_REF% *}" "${DBUS_REF#* }" Set "" value "${WORKSTEP}" > /dev/null
         eval "${BIN[sudo]} -A ${SCRIPT} 2>&1" >> /tmp/ph-debug
       done

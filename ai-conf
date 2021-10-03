@@ -126,7 +126,7 @@ function CONFIGURE_DEFAULT_EDITOR {
       SUGGESTS+=("${KNOWN%:*}"); DESCRIPS+=("${KNOWN#*:}")
     fi
   done
-  
+
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
     "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
   SELECTED="$(</tmp/selection)"
@@ -147,14 +147,14 @@ function CONFIGURE_FSTAB {
     WARNING="${CFG_FILE} has already been written to.  Overwrite it?"
     DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${WARNING}" || return 1
   fi
-  
+
   if [[ -e "${HOME}/fstab" ]]; then
     if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
       USE_PRIVILEGE sh -c "'${BIN[cat]}' '${HOME}/fstab' >> '${CFG_FILE}'"
       SKIP_GEN=true
     fi
   fi
-  
+
   ${SKIP_GEN} || USE_PRIVILEGE sh -c "'${BIN[genfstab]}' -L '${OSCHROOT}' | \
     ${BIN[sed]} 's/^#.*//g;s/\s\+/\t/g;s/\([0-9]\)\t\([0-9]\)$/\1 \2/g' | \
     ${BIN[sed]} '/^$/d' >> '${OSCHROOT}/etc/fstab'"
@@ -223,14 +223,14 @@ function CONFIGURE_INITRAMFS_COMPRESSION {
   [[ -z ${PREV_CFG} ]] && PREV_CFG=zstd
 
   SUGGESTS=(cat bzip2 gzip lz4 lzma lzop xz zstd)
-  
+
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${PREV_CFG}" \
     "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
   SELECTED="$(</tmp/selection)"
 
   # Set all COMPRESSION options to be commented out
   USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*${CFG_ITEM}=\"\([a-z0-9]\+\)\"/#${CFG_ITEM}=\"\1\"/g" "${CFG_FILE}"
- 
+
   if "${BIN[grep]}" -q "${CFG_ITEM}=\"${SELECTED}\"" "${CFG_FILE}"; then
     # If a COMPRESSION option is found commented out, un-comment it
     USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*#\s*${CFG_ITEM}=\"${SELECTED}\"/${CFG_ITEM}=\"${SELECTED}\"/g" "${CFG_FILE}"
@@ -352,7 +352,7 @@ function CONFIGURE_LOCALE_AVAILABILITY {
   local LANGUAGE LOCALE SELECTED
 
   SEL_LANG="$("${BIN[grep]}" -v '^\s*#' "${CFG_FILE}" | "${BIN[sed]}" 's/^\s*\([a-z]\{2,3\}\)_.*\.UTF-8 UTF-8.*/\1/g;' | "${BIN[sort]}" -u)"
-  
+
   while read -r LANGUAGE; do
     SUGGESTS+=("${LANGUAGE}")
     [[ ${SEL_LANG} =~ ${LANGUAGE} ]] && SELSTATE+=(on) || SELSTATE+=(off)
@@ -397,7 +397,7 @@ function CONFIGURE_LOCALE_COLLATION {
   ##############################################################################
   local -a SUGGESTS SELSTATE
   local SELECTED
-  
+
   SUGGESTS=(POSIX C "$("${BIN[grep]}" 'LANG=' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)")
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' 'POSIX' \
     "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
@@ -436,7 +436,7 @@ function CONFIGURE_LOCALE_LANGUAGE {
   fi
 
   USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
-  
+
   for CFG_ITEM in LANG LC_ADDRESS LC_CTYPE LC_IDENTIFICATION LC_MEASUREMENT LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER LC_TELEPHONE LC_TIME; do
     if "${BIN[grep]}" -q "${CFG_ITEM}" "${CFG_FILE}"; then
       USE_PRIVILEGE "${BIN[sed]}" -i "s/.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}.UTF-8/g" "${CFG_FILE}"
@@ -466,7 +466,7 @@ function CONFIGURE_LOCALE_MESSAGES {
   SUGGESTS=(POSIX C "$("${BIN[grep]}" 'LANG=' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)")
 
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' 'C' \
-    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
   SELECTED=$(</tmp/selection)
 
   USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
@@ -490,7 +490,7 @@ function CONFIGURE_NANORC_COLORS {
   local CLRLINES="$("${BIN[grep]}" '^\s*#*\s*set [a-z]\+color [a-z,]\+' "${CFG_FILE}" | "${BIN[wc]}" -l)"
   local SWCOLORS="$("${BIN[grep]}" '^\s*#*\s*set [a-z]\+color [a-z,]\+' "${CFG_FILE}" | "${BIN[head]}" -$((CLRLINES/2)))"
   local RTCOLORS="$("${BIN[grep]}" '^\s*#*\s*set [a-z]\+color [a-z,]\+' "${CFG_FILE}" | "${BIN[tail]}" -$((CLRLINES/2)))"
-  
+
   if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
     if [[ ${SWCOLORS} =~ '#' ]]; then
       ESCOLORS="$("${BIN[sed]}" 's/^\s*#*\s*set/set/g' <<< "${SWCOLORS}")"
@@ -776,7 +776,7 @@ function CONFIGURE_PLYMOUTH {
   if ! "${BIN[grep]}" 'HOOKS' "${OSCHROOT}/etc/mkinitcpio.conf" | "${BIN[grep]}" -v '^\s*#' | "${BIN[grep]}" 'plymouth'; then
     USE_PRIVILEGE ${BIN[sed]} -i 's/autodetect/plymouth autodetect/g' "${OSCHROOT}/etc/mkinitcpio.conf"
   fi
-  
+
   if ! [[ -e "${OSCHROOT}/usr/share/plymouth/themes/spinner/watermark.png" ]]; then
     USE_PRIVILEGE "${BIN[cp]}" "${OSCHROOT}/usr/share/plymouth/arch-logo.png" \
        "${OSCHROOT}/usr/share/plymouth/themes/spinner/watermark.png"
@@ -789,7 +789,7 @@ function CONFIGURE_PLYMOUTH {
     USE_PRIVILEGE "${BIN[cp]}" -r "${OSCHROOT}/usr/share/plymouth/themes/${SELECTED}" "${OSCHROOT}/usr/share/plymouth/themes/${SELECTED}-custom"
     USE_PRIVILEGE "${BIN[rename]}" "${SELECTED}.plymouth" "${SELECTED}-custom.plymouth" "${OSCHROOT}/usr/share/plymouth/themes/${SELECTED}-custom/${SELECTED}.plymouth"
   fi
-  
+
   CFG_FILE="${OSCHROOT}/usr/share/plymouth/themes/${SELECTED}-custom/${SELECTED}-custom.plymouth"
   CFG_ITEM="WatermarkVerticalAlignment"
   USE_PRIVILEGE "${BIN[sed]}" -i "s/${CFG_ITEM}=.*/${CFG_ITEM}=.6/g" "${CFG_FILE}"
@@ -798,7 +798,7 @@ function CONFIGURE_PLYMOUTH {
   if ! "${BIN[grep]}" -q 'kernel\.printk\s*=\s*3\s\+3\s\+3\s\+3' "${OSCHROOT}"/etc/sysctl.d/*; then
    USE_PRIVILEGE sh -c "echo 'kernel.printk = 3 3 3 3' > '${OSCHROOT}/etc/sysctl.d/20-quiet-printk.conf'"
   fi
-  
+
   if ! "${BIN[grep]}" -q $'\x1b.\x3f\x32\x35\x68' "${OSCHROOT}/etc/issue"; then
     USE_PRIVILEGE sh -c "setterm -cursor on >> '${OSCHROOT}/etc/issue'"
   fi
@@ -1157,9 +1157,9 @@ function CONFIGURE_VCONSOLE_KEYMAP {
 
   COUNTRY="$("${BIN[grep]}" 'LANGUAGE=' "${CFG_FILE/vconsole/locale}" | "${BIN[cut]}" -d_ -f2)"
   IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${OSCHROOT}/usr/share/kbd/keymaps" \( -name "${COUNTRY,,}-*" -o -name "${COUNTRY,,}_*" -o -name "${COUNTRY,,}.*" \) | "${BIN[sed]}" 's|.*/||g;s|\.map\.gz||g' | "${BIN[sort]}")
-  
+
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
-    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
   SELECTED="$(</tmp/selection)"
 
   USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"

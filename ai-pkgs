@@ -100,15 +100,15 @@ function GET_BROWSERS {
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     [[ ! ${BROWSERS_BLINK[*]} =~ Brave ]] && IS_REPO_PKG 'brave-bin' && BROWSERS_BLINK+=('brave-bin:Brave')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
-    
+
     "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Chromium"
     BROWSERS_BLINK+=('chromium:Chromium')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
-    
+
     "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Chrome"
     IS_REPO_PKG 'google-chrome' && BROWSERS_BLINK+=('google-chrome:Chrome')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
-    
+
     "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Edge"
     IS_REPO_PKG 'microsoft-edge' && BROWSERS_BLINK+=('microsoft-edge:Edge')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
@@ -116,7 +116,7 @@ function GET_BROWSERS {
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     [[ ! ${BROWSERS_BLINK[*]} =~ Edge ]] && IS_REPO_PKG 'microsoft-edge-beta-bin' && BROWSERS_BLINK+=('microsoft-edge-beta-bin:Edge')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
-    
+
     "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Opera"
     BROWSERS_BLINK+=('opera:Opera')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
@@ -128,7 +128,7 @@ function GET_BROWSERS {
     "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Vivaldi"
     BROWSERS_BLINK+=('vivaldi:Vivaldi')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
-    
+
     "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Yandex"
     IS_REPO_PKG 'yandex-browser' && BROWSERS_BLINK+=('yandex-browser:Yandex.Browser')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
@@ -164,7 +164,7 @@ function GET_BROWSERS {
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
     [[ ! ${BROWSERS_GECKO[*]} =~ Palemoon ]] && IS_REPO_PKG 'palemoon-gtk3-bin' && BROWSERS_GECKO+=('palemoon-gtk3-bin:Palemoon')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
-    
+
     "${BIN[printf]}" 'XXX\nLooking for %s...\nXXX\n' "Seamonkey"
     BROWSERS_GECKO+=('seamonkey:Seamonkey')
     ((CURSTEP++)); echo "$((CURSTEP*100/TTLSTEPS))"
@@ -247,7 +247,7 @@ function GET_GPU_TYPE_AMD {
                                *Richland*|*Trinity*) echo 'ts3:vd:va:';; # HD 8000
                  *'Cape Verde'*|*Pitcairn*|*Tahiti*) echo 'gcn1:vd:va:vk:';; # HD 7000
                    *Chelsea*|*Heathrow*|*Wimbledon*) echo 'gcn1:vd:va:vk:';; # HD 7000
-     *Malta*|*Mars*|*Neptune*|*Oland*|*Sun*|*Venus*) echo 'gcn1:vd:va:vk:';; # HD 8000 
+     *Malta*|*Mars*|*Neptune*|*Oland*|*Sun*|*Venus*) echo 'gcn1:vd:va:vk:';; # HD 8000
          *'R7 250'*|*'R9 270'*|*Jet*|*Opal*|*Topaz*) echo 'gcn1:vd:va:vk:';; # Rx 200
                          *Curacao*|*Kryptos*|*Meso*) echo 'gcn1:vd:va:vk:';; # Rx 300
                                           *Bonaire*) echo 'gcn2:vd:va:vk:cl:';; # HD 7000
@@ -399,7 +399,7 @@ function NETWORK_SCAN {
   ##############################################################################
   local -r BAKTITLE="Network Scan"
   local -r HELP_MSG="Scanning network for ${1^^} servers..."
-  ##############################################################################  
+  ##############################################################################
   local PORTNAME="${1^^}" RETVALUE
   local -i PORTNMBR DLG_WIDE="$(( ${#HELP_MSG} + TITLEPAD ))"
 
@@ -562,7 +562,7 @@ function INSTALL_DIRECTORY {
   local -r BAKTITLE="OS Mount Location"
   local -r HELP_MSG="Where is the OS root filessystem mounted?"
   ##############################################################################
-  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt 
+  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt
   MOUNTPNT="$(</tmp/selection)"
 }
 
@@ -1052,7 +1052,7 @@ function PACKAGESEL_DESKTOP {
   local -A PDF_READ SCRN_RES TERMINAL TASK_MGR TXT_EDIT
   local -a EXT_PKGS EXT_DSCS GRP_PKGS PKG_LIST PKG_DSCS AUR_PKGS AUR_DSCS
   local -i PKGCOUNT
-  local DFLT_PKG GROUPPKG PKGGROUP 
+  local DFLT_PKG GROUPPKG PKGGROUP
 
   # This is going to get complicated very quickly.
   #   FORCED = base packages needed to install the desktop environment
@@ -1149,7 +1149,7 @@ function PACKAGESEL_DESKTOP {
       PACKAGES[demndtry]+="$(CLEAN_PACKAGE_GROUP 'plasma') $(CLEAN_PACKAGE_GROUP 'kde-system') $(CLEAN_PACKAGE_GROUP 'kf5') phonon-qt5-gstreamer"
       NTV_GRPS=(kde-accessibility kde-graphics kde-multimedia kde-network kde-utilities kdepim kdesdk)
       VIRT_GRP=(kcm-wacomtablet)
-      AUR_PKGS=(grub2-editor-frameworks kcm-pointing-devices kcm-uefi kcm-grub2-git plasma5-applets-eventcalander plymouth-kcm 
+      AUR_PKGS=(grub2-editor-frameworks kcm-pointing-devices kcm-uefi kcm-grub2-git plasma5-applets-eventcalander plymouth-kcm
       systemd-kcm)
       ;;
     *ukui*)
@@ -2472,7 +2472,7 @@ function WIZARD_MODE {
   INSTALL_DIRECTORY
   INTENTS_PURPOSE	# desktop, server, rescue
   INTENTS_RUNTIME	# hardware, virtual, container
-  if [[ ${INTENTS[runtime]} != container ]]; then 
+  if [[ ${INTENTS[runtime]} != container ]]; then
     [[ rescue,server =~ ${INTENTS[purpose]} ]] && OPTION_ENTROPY
     [[ ${INTENTS[runtime]} == virtual ]] && OPTION_ENTROPY
     PACKAGESEL_KERNEL

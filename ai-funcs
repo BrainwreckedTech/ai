@@ -208,7 +208,7 @@ function TRIM {
   # remove leading whitespace characters
   STRING="${STRING#"${STRING%%[![:space:]]*}"}"
   # remove trailing whitespace characters
-  STRING="${STRING%"${STRING##*[![:space:]]}"}"   
+  STRING="${STRING%"${STRING##*[![:space:]]}"}"
   printf '%s' "${STRING}"
 }
 
