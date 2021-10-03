@@ -24,6 +24,77 @@ function USE_PRIVILEGE {
   GET_PRIVILEGE && "${BIN[sudo]}" "${@}" || return 1
 }
 
+function CONVERT_NETMASK {
+  case "${1}" in
+                    0) echo '0.0.0.0';;
+                    1) echo '128.0.0.0';;
+                    2) echo '192.0.0.0';;
+                    3) echo '244.0.0.0';;
+                    4) echo '240.0.0.0';;
+                    5) echo '248.0.0.0';;
+                    6) echo '252.0.0.0';;
+                    7) echo '254.0.0.0';;
+                    8) echo '255.0.0.0';;
+                    9) echo '255.128.0.0';;
+                   10) echo '255.192.0.0';;
+                   11) echo '255.244.0.0';;
+                   12) echo '255.240.0.0';;
+                   13) echo '255.248.0.0';;
+                   14) echo '255.252.0.0';;
+                   15) echo '255.254.0.0';;
+                   16) echo '255.255.0.0';;
+                   17) echo '255.255.128.0';;
+                   18) echo '255.255.192.0';;
+                   19) echo '255.255.244.0';;
+                   20) echo '255.255.240.0';;
+                   21) echo '255.255.248.0';;
+                   22) echo '255.255.252.0';;
+                   23) echo '255.255.254.0';;
+                   24) echo '255.255.255.0';;
+                   25) echo '255.255.255.128';;
+                   26) echo '255.255.255.192';;
+                   27) echo '255.255.255.244';;
+                   28) echo '255.255.255.240';;
+                   29) echo '255.255.255.248';;
+                   30) echo '255.255.255.252';;
+                   31) echo '255.255.255.254';;
+                   32) echo '255.255.255.255';;
+            '0.0.0.0') echo '0';;
+          '128.0.0.0') echo '1';;
+          '192.0.0.0') echo '2';;
+          '244.0.0.0') echo '3';;
+          '240.0.0.0') echo '4';;
+          '248.0.0.0') echo '5';;
+          '252.0.0.0') echo '6';;
+          '254.0.0.0') echo '7';;
+          '255.0.0.0') echo '8';;
+        '255.128.0.0') echo '9';;
+        '255.192.0.0') echo '10';;
+        '255.244.0.0') echo '11';;
+        '255.240.0.0') echo '12';;
+        '255.248.0.0') echo '13';;
+        '255.252.0.0') echo '14';;
+        '255.254.0.0') echo '15';;
+        '255.255.0.0') echo '16';;
+      '255.255.128.0') echo '17';;
+      '255.255.192.0') echo '18';;
+      '255.255.244.0') echo '19';;
+      '255.255.240.0') echo '20';;
+      '255.255.248.0') echo '21';;
+      '255.255.252.0') echo '22';;
+      '255.255.254.0') echo '23';;
+      '255.255.255.0') echo '24';;
+    '255.255.255.128') echo '25';;
+    '255.255.255.192') echo '26';;
+    '255.255.255.244') echo '27';;
+    '255.255.255.240') echo '28';;
+    '255.255.255.248') echo '29';;
+    '255.255.255.252') echo '30';;
+    '255.255.255.254') echo '31';;
+    '255.255.255.255') echo '32';;
+  esac
+}
+
 function CHROOT_DIRECTORY {
   ##############################################################################
   local -r BAKTITLE="OS Mount Location"
@@ -473,6 +544,57 @@ function CONFIGURE_NANORC_OPTIONS {
       fi
     fi
   done
+}
+
+function CONFIGURE_NTP {
+  local CFG_FILE="${OSCHROOT}/etc/ntp.conf"
+  #######################################################################
+  local BAKTITLE="NTP"
+  local HELP_MSG="Configure NTP:"
+  #######################################################################
+  local -a LBL_STRS DEFAULTS
+  local IPAWMASK
+
+  LBL_STRS=('NTP Servers' 'Net Mask To Serve')
+
+  DEFAULTS+=( "$("${BIN[grep]}" '^server' "${CFG_FILE}" | "${BIN[cut]}" -d\  -f2 | "${BIN[tr]}" '\n' ' ' | "${BIN[sed]}" 's/ $//g')" )
+  DEFAULTS+=( "$("${BIN[grep]}" '^restrict.*mask' "${CFG_FILE}" | "${BIN[cut]}" -d\  -f2-4 | "${BIN[tr]}" '\n' ' ' | "${BIN[sed]}" 's/ &//g;s| mask |/|g')" )
+
+  if [[ -z ${DEFAULTS[0]} ]]; then
+    DEFAULTS[0]='0.arch.pool.ntp.org 1.arch.pool.ntp.org 2.arch.pool.ntp.org 3.arch.pool.ntp.org'
+    REGION="$("${BIN[grep]}" 'LANGUAGE' "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d_ -f2)"
+    [[ -n ${REGION} ]] && DEFAULTS[0]="${DEFAULTS[0]//arch/${REGION,,}}"
+  fi
+
+  if [[ -z ${DEFAULTS[1]} ]]; then
+    DEFAULTS[1]="$("${BIN[ip]}" -o -f inet a | "${BIN[grep]}" 'brd.*global' | "${BIN[grep]}" -zo '[0-9.]\{7,15\}/[0-9]\+')"
+  fi
+
+  DIALOG_FORM "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 'LBL_STRS' 'DEFAULTS' || return 1
+  SELECTED="$(</tmp/selection)"
+
+  IPAWMASK="${SELECTED##*$'\n'}"
+  if [[ -n ${IPAWMASK} ]]; then
+    IADDRESS="${IPAWMASK%%\/*}"
+    NET_MASK="${IPAWMASK##*\/}"
+    [[ ${NET_MASK} =~ ^[0-9]{1,2}$ ]] && NET_MASK="$(CONVERT_NETMASK "${NET_MASK}")"
+    SRVRSPEC="${IADDRESS} mask ${NET_MASK}"
+  fi
+
+  for NTP_SRVR in ${SELECTED%%$'\n'*}; do
+    NTPSRVRS+="server ${NTP_SRVR}\n"
+  done
+
+  [[ -n ${SRVRSPEC} ]] && NTPSRVRS+="tos orphan 15\n"
+
+  RSTRICTS="restrict default kod limited nomodify nopeer noquery noserve notrap\n"
+  [[ -n ${SRVRSPEC} ]] && RSTRICTS+="restrict ${SRVRSPEC} limited nomodify notrap\n"
+  RSTRICTS+="restrict 127.0.0.1\n"
+  RSTRICTS+="restrict ::1\n"
+
+
+  USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s/\(#[[:alpha:][:punct:] ]\+\n\)*\(\(server\|tos\) [[:lower:][:digit:]. ]\+\n\)\+/${NTPSRVRS}/g" "${CFG_FILE}"
+  USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s/\(restrict [[:lower:][:digit:]:. ]\+\n\)\+/${RSTRICTS}/g" "${CFG_FILE}"
 }
 
 function CONFIGURE_PACMAN_OPTIONS {
@@ -1256,8 +1378,7 @@ function WIZARD_MODE {
   CONFIGURE_SUDO
   CONFIGURE_POLICYKIT_ROOTPW
   CONFIGURE_STICKY_BIT
-  #[[ -e "${OSCHROOT}/etc/ntp.conf" ]] && CONFIGURE_NTP
-  [[ -e "${OSCHROOT}/etc/ntp.conf" ]] || CONFIGURE_SYSTEMD_TIMESYNCD
+  [[ -e "${OSCHROOT}/etc/ntp.conf" ]] && CONFIGURE_NTP || CONFIGURE_SYSTEMD_TIMESYNCD
   CONFIGURE_PLYMOUTH
   CONFIGURE_SMARTD_DEVICESCAN
   CONFIGURE_SYSTEMD_LOGIND_HANDLELIDSWITCH
