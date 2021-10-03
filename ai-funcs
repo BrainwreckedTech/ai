@@ -226,6 +226,7 @@ function DIALOG_GEOMETRY_AUTO {
   case "${DLG_TYPE}" in
     drctry) HIGH_PAD=16;;
       file) HIGH_PAD=16;;
+      form) HIGH_PAD=7;;
      input) WIDE_PAD=4;  HIGH_PAD=7; unset LST_HIGH;;
      multi) WIDE_PAD=14; HIGH_PAD=6;;
     single) WIDE_PAD=10; HIGH_PAD=6;;
@@ -240,6 +241,13 @@ function DIALOG_GEOMETRY_AUTO {
       *kdialog) echo "--geometry ${GUI_WIDE}x${GUI_HIGH}";;
        *zenity) echo "--width=${GUI_WIDE} --height=${GUI_HIGH}";;
        *dialog) echo "$(( MAX_HIGH - HIGH_PAD )) 0";;
+    esac
+  elif [[ ${DLG_TYPE} == form ]]; then
+    case "${BIN[dialog]}" in
+      *Xdialog) echo "${GUI_WIDE}x${GUI_HIGH}";;
+      *kdialog) echo "--geometry ${GUI_WIDE}x${GUI_HIGH}";;
+       *zenity) echo "--width=${GUI_WIDE} --height=${GUI_HIGH}";;
+       *dialog) echo "'$((${#OPT_TAGS[@]}+HIGH_PAD))' '${MAX_WIDE}' '${#OPT_TAGS[@]}'";;
     esac
   else
     case "${BIN[dialog]}" in
@@ -341,6 +349,57 @@ function DIALOG_FILE_SELECT {
     [[ ${BIN[dialog]} =~ zenity ]] && COMMAND+=" '${ITMSLCTS[${PC}]}'"
     COMMAND+=" '${ITM_TAGS[${PC}]}' '${ITM_OPTS[${PC}]}'"
     [[ ${BIN[dialog]} =~ zenity ]] || COMMAND+=" '${ITMSLCTS[${PC}]}'"
+  done
+
+  "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
+  eval "${COMMAND} ${DLGREDIR} /tmp/selection"
+}
+
+function DIALOG_FORM {
+  local MAIN_TTL="${1}"
+  local BACK_TTL="${2}"
+  local HELP_MSG="${3}"
+  local -n ITM_LBLS="${4}"
+  local -n ITM_DFLT="${5}"
+  local MXLBLLEN SWITCHES
+
+  SWITCHES="--separator $'\n' "
+
+  case "${BIN[dialog]}" in
+    *Xdialog)
+      SWITCHES+="--${#ITM_LBLS[@]}inputsbox "
+      ;;
+    *zenity)
+      SWITCHES+='--forms --text='
+      ;;
+    *dialog)
+      SWITCHES+="--form "
+      MXFLDLEN="$((MAX_WIDE-MXLBLLEN-8))"
+      for ITMLABEL in "${ITM_LBLS[@]}"; do
+        [[ ${#ITMLABEL} -gt ${MXLBLLEN} ]] && MXLBLLEN="${#ITMLABEL}"
+      done
+      ;;
+  esac
+
+  COMMAND="$(DIALOG_MAIN_CALL) "
+  COMMAND+="$(DIALOG_TITLES "${MAIN_TTL}" "${BACK_TTL}") "
+  COMMAND+="${SWITCHES}'${HELP_MSG}' "
+  COMMAND+="$(DIALOG_GEOMETRY_AUTO 'form' "${HELP_MSG}" 'ITM_LBLS' 'ITM_DFLT') "
+  for (( PC=0 ; PC < ${#ITM_LBLS[@]} ; PC++ )); do
+    LSTR="${ITM_LBLS[${PC}]}:"
+    ISTR="${ITM_DFLT[${PC}]}"
+    case "${BIN[dialog]}" in
+      *Xdialog)
+        COMMAND+=" '${LSTR}' '${ISTR}'"
+        ;;
+      *zenity)
+        COMMAND+=" --add-entry='${LSTR}'"
+        ;;
+      *dialog)
+        LPOS="$((MXLBLLEN-${#ITM_LBLS[${PC}]}+1))"
+        COMMAND+=" '${LSTR}' '$((PC+1))' '${LPOS}' '${ISTR}' '$((PC+1))' '$((MXLBLLEN+3))' '${MXFLDLEN}' 127"
+        ;;
+    esac
   done
 
   "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
