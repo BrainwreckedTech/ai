@@ -924,6 +924,34 @@ function CONFIGURE_SYSTEMD_SERVICE_STOP_TIMEOUT {
   USE_PRIVILEGE "${BIN[sed]}" -i "s/^.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}s/g" "${CFG_FILE}"
 }
 
+function CONFIGURE_SYSTEMD_TIMESYNCD {
+  local CFG_FILE="${OSCHROOT}/etc/systemd/timesyncd.conf"
+  #######################################################################
+  local BAKTITLE="systemd-timesyncd"
+  local HELP_MSG="Configure NTP Servers:"
+  #######################################################################
+  local -a LBL_STRS DEFAULTS
+
+  LBL_STRS=(NTP FallbackNTP)
+
+  DEFAULTS+=( "$("${BIN[grep]}" "^NTP=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)" )
+  DEFAULTS+=( "$("${BIN[grep]}" "^FallbackNTP=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)" )
+
+  if [[ -z ${DEFAULTS[0]} ]]; then
+    DEFAULTS[0]='0.arch.pool.ntp.org 1.arch.pool.ntp.org 2.arch.pool.ntp.org 3.arch.pool.ntp.org'
+    REGION="$("${BIN[grep]}" 'LANGUAGE' "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d_ -f2)"
+    [[ -n ${REGION} ]] && DEFAULTS[0]="${DEFAULTS[0]//arch/${REGION,,}}"
+  fi
+
+  [[ -z ${DEFAULTS[1]} ]] && DEFAULTS[1]='0.pool.ntp.org 1.pool.ntp.org 2.pool.ntp.org 3.pool.ntp.org'
+
+  DIALOG_FORM "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 'LBL_STRS' 'DEFAULTS'
+  SELECTED="$(</tmp/selection)"
+
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/\s*#*\s*NTP=.*/NTP=${SELECTED%%$'\n'*}/g" "${CFG_FILE}"
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/\s*#*\s*FallbackNTP=.*/FallbackNTP=${SELECTED##*$'\n'}/g" "${CFG_FILE}"
+}
+
 function CONFIGURE_TIMEZONE {
   local CFG_FILE="${OSCHROOT}/etc/localtime"
   ##############################################################################
@@ -1228,7 +1256,8 @@ function WIZARD_MODE {
   CONFIGURE_SUDO
   CONFIGURE_POLICYKIT_ROOTPW
   CONFIGURE_STICKY_BIT
-  #CONFIGURE_NTP
+  #[[ -e "${OSCHROOT}/etc/ntp.conf" ]] && CONFIGURE_NTP
+  [[ -e "${OSCHROOT}/etc/ntp.conf" ]] || CONFIGURE_SYSTEMD_TIMESYNCD
   CONFIGURE_PLYMOUTH
   CONFIGURE_SMARTD_DEVICESCAN
   CONFIGURE_SYSTEMD_LOGIND_HANDLELIDSWITCH
