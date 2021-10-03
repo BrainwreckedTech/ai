@@ -76,7 +76,7 @@ fi
 function CHECK_FOR_FAILURE_POINTS {
   if [[ -n ${ERR_LIST} ]]; then
     case "${ERR_LIST}" in
-      *CRIT:*) ATTENTION="PARTITION HELPER CANNOT CONTINUE";;
+      *CRIT:*) ATTENTION="ASSISTED INSTALLER CANNOT CONTINUE";;
       *WARN:*) ATTENTION="NON-CRITICAL ERRORS OCCURED";;
     esac
     ERRORMSG+="The following errors occured:\n\n"
