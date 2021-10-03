@@ -12,7 +12,8 @@ declare OSCHROOT
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in cp curl date genfstab head ip ln passwd readlink rename stat tail tar useradd usermod; do
+for CMD in cp curl date genfstab head ip ln pacman-key \
+  passwd readlink rename stat tail tar useradd usermod; do
   BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
@@ -595,6 +596,34 @@ function CONFIGURE_NTP {
 
   USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s/\(#[[:alpha:][:punct:] ]\+\n\)*\(\(server\|tos\) [[:lower:][:digit:]. ]\+\n\)\+/${NTPSRVRS}/g" "${CFG_FILE}"
   USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s/\(restrict [[:lower:][:digit:]:. ]\+\n\)\+/${RSTRICTS}/g" "${CFG_FILE}"
+}
+
+function CONFIGURE_PACMAN_KEYS {
+  ##############################################################################
+  local BAKTITLE="Pacman Keys"
+  local HELP_MSG="Select the keys to add:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+  local CONF_OPT SELECTED
+
+  SUGGESTS=(DDF7DB817396A49B2A2723F7403BD972F75D9D76 B545E9B7CD906FE3)
+  DESCRIPS=('Repo signing key for archzfs' 'Repo signing key for andontie-aur')
+
+  if ! compgen -G "${OSCHROOT}/var/lib/pacman/local/chaotic-mirrorlist*"; then
+    SUGGESTS+=(3056513887B78AEB)
+    DESCRIPS+=('Repo signing key for chaotic-aur')
+  fi
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return 1
+  SELECTED="$(</tmp/selection)"
+
+  USE_PRIVILEGE "${BIN[pacman-key]}" --config "${OSCHROOT}/etc/pacman.conf" --gpgdir "${OSCHROOT}/etc/pacman.d/gnupg" --init
+
+  for GNUPGKEY in ${SELECTED}; do
+    USE_PRIVILEGE "${BIN[pacman-key]}" --config "${OSCHROOT}/etc/pacman.conf" --gpgdir "${OSCHROOT}/etc/pacman.d/gnupg" --recv-key "${GNUPGKEY}"
+    USE_PRIVILEGE "${BIN[pacman-key]}" --config "${OSCHROOT}/etc/pacman.conf" --gpgdir "${OSCHROOT}/etc/pacman.d/gnupg" --lsign-key "${GNUPGKEY}"
+  done
 }
 
 function CONFIGURE_PACMAN_OPTIONS {
@@ -1372,7 +1401,7 @@ function WIZARD_MODE {
   CONFIGURE_INITRAMFS_COMPRESSION
   CONFIGURE_PACMAN_OPTIONS
   CONFIGURE_PACMAN_REPOS
-  #CONFIGURE_PACMAN_KEYS
+  CONFIGURE_PACMAN_KEYS
   CONFIGURE_NANORC_OPTIONS
   CONFIGURE_NANORC_COLORS
   CONFIGURE_SUDO
