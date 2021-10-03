@@ -12,9 +12,9 @@ declare OSCHROOT
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in cp curl date genfstab head ip ln pacman-key \
-  passwd readlink rename stat tail tar useradd usermod; do
-  BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
+for CMD in cp curl date genfstab head ip ln pacman-key passwd \
+  readlink rename stat systemctl tail tar useradd usermod; do
+    BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
 declare -r SCRSTIME="$(date +%s)"
@@ -1231,6 +1231,59 @@ function CREATE_NEW_USERS {
   done
 }
 
+function ENABLE_SYSTEMD_SERVICES {
+  ##############################################################################
+  local BAKTITLE="systemd Services"
+  local HELP_MSG="Enable systemd services:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE
+  local SDUFPATH=usr/lib/systemd/system
+  local SDUFIPTH=etc/systemd/system
+  local PLYMOUTH=false
+
+  [[ -e "${OSCHROOT}/usr/lib/systemd/system/plymouth-start.service" ]] && PLYMOUTH=true
+
+  VALUNITS=(acpid.service connman.service cpupower.service cronie.service
+            cups.service dhcpcd.service gdm.service lightdm.service
+            lm_sensors.service lxdm.service NetworkManager.service
+            nfs-client.target ntpd.service pkgfile-update.timer remote-fs.target
+            rpcbind.service sddm.service smartd.service sshd.service
+            systemd-networkd.service xdm.service zfs-import-cache.service
+            zfs-import.target zfs-mount.service zfs.target)
+
+  for UNITFILE in "${VALUNITS[@]}"; do
+    UNITPATH="${OSCHROOT}/${SDUFPATH}/${UNITFILE}"
+    if [[ -e "${UNITPATH}" ]]; then
+      DESCRIPS+=("$("${BIN[grep]}" Description= "${UNITPATH}" | "${BIN[cut]}" -d= -f2)")
+      if [[ ${UNITFILE} =~ dm.service ]] && ${PLYMOUTH}; then
+        UNITFILE="${UNITFILE/.service/-plymouth.service}"
+        UNITPATH="${OSCHROOT}/${SDUFPATH}/${UNITFILE}"
+      fi
+      SUGGESTS+=("${UNITFILE}")
+      if [[ ${UNITFILE} =~ dm(-plymouth)*.service ]]; then
+        DSPLYMGR="$("${BIN[readlink]}" "${OSCHROOT}/${SDUFIPTH}/display-manager.service")"
+        [[ ${UNITPATH} == ${DSPLYMGR} ]] && SELSTATE+=(on) || SELSTATE+=(off)
+      else
+        compgen -G "${OSCHROOT}/${SDUFIPTH}/*/${UNITFILE}" && SELSTATE+=(on) || SELSTATE+=(off)
+      fi
+    fi
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return 1
+  SELECTED="$(</tmp/selection)"
+
+  [[ -z ${OSCHROOT} ]] && unset OSCHROOT
+
+  for (( LC=0 ; LC<${#SUGGESTS[@]} ; LC++ )); do
+    if [[ ${SELSTATE[${LC}]} == on ]] && [[ ! ${SELECTED} =~ ${SUGGESTS[${LC}]} ]]; then
+      USE_PRIVILEGE "${BIN[systemctl]}" ${OSCHROOT+--root=}${OSCHROOT} disable "${SUGGESTS[${LC}]}"
+    elif [[ ${SELSTATE[${LC}]} == off ]] && [[ ${SELECTED} =~ ${SUGGESTS[${LC}]} ]]; then
+      USE_PRIVILEGE "${BIN[systemctl]}" ${OSCHROOT+--root=}${OSCHROOT} enable "${SUGGESTS[${LC}]}"
+    fi
+  done
+}
+
 function SELECT_USER {
   ##############################################################################
   local BAKTITLE="${1}"
@@ -1421,6 +1474,7 @@ function WIZARD_MODE {
   SET_USER_PASSWORD
   SET_USER_GROUPS
   SET_USER_SHELL
+  ENABLE_SYSTEMD_SERVICES
 }
 
 while true; do
