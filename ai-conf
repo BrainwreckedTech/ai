@@ -877,6 +877,23 @@ function CONFIGURE_SYSTEMD_JOUNRAL_SIZE {
   USE_PRIVILEGE "${BIN[sed]}" -i "s/^.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}M/g" "${CFG_FILE}"
 }
 
+function CONFIGURE_SYSTEMD_RESOLVED {
+  #######################################################################
+  local BAKTITLE="Resolver"
+  local HELP_MSG="Use systemd-resolved?"
+  #######################################################################
+
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    USE_PRIVILEGE "${BIN[ln]}" -fs '/run/systemd/resolve/resolv.conf' "${OSCHROOT}/etc/resolv.conf"
+    USE_PRIVILEGE "${BIN[sed]}" -i 's/ [!UNAVAIL=return] / /g' "${OSCHROOT}/etc/nsswitch.conf"
+    USE_PRIVILEGE "${BIN[sed]}" -i 's/^#*MulticastDNS.*/MulticastDNS=no/g' "${OSCHROOT}/etc/systemd/resolved.conf"
+  else
+    USE_PRIVILEGE "${BIN[rm]}" "${OSCHROOT}/etc/resolv.conf" && touch "${OSCHROOT}/etc/resolv.conf"
+    USE_PRIVILEGE "${BIN[sed]}" -i 's/resolve dns/resolve [!UNAVAIL=return] dns/ /g' "${OSCHROOT}/etc/nsswitch.conf"
+    USE_PRIVILEGE "${BIN[sed]}" -i 's/^#*MulticastDNS.*/#MulticastDNS=/g' "${OSCHROOT}/etc/systemd/resolved.conf"
+  fi
+}
+
 function CONFIGURE_SYSTEMD_SERVICE_START_TIMEOUT {
   local CFG_FILE="${OSCHROOT}/etc/systemd/system.conf"
   local CFG_ITEM="DefaultTimeoutStartSec"
@@ -905,23 +922,6 @@ function CONFIGURE_SYSTEMD_SERVICE_STOP_TIMEOUT {
   DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 15 45 "${PREV_CFG}"
   SELECTED="$(</tmp/selection)"
   USE_PRIVILEGE "${BIN[sed]}" -i "s/^.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}s/g" "${CFG_FILE}"
-}
-
-function CONFIGURE_SYSTEMD_RESOLVED {
-  #######################################################################
-  local BAKTITLE="Resolver"
-  local HELP_MSG="Use systemd-resolved?"
-  #######################################################################
-
-  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
-    USE_PRIVILEGE "${BIN[ln]}" -fs '/run/systemd/resolve/resolv.conf' "${OSCHROOT}/etc/resolv.conf"
-    USE_PRIVILEGE "${BIN[sed]}" -i 's/ [!UNAVAIL=return] / /g' "${OSCHROOT}/etc/nsswitch.conf"
-    USE_PRIVILEGE "${BIN[sed]}" -i 's/^#*MulticastDNS.*/MulticastDNS=no/g' "${OSCHROOT}/etc/systemd/resolved.conf"
-  else
-    USE_PRIVILEGE "${BIN[rm]}" "${OSCHROOT}/etc/resolv.conf" && touch "${OSCHROOT}/etc/resolv.conf"
-    USE_PRIVILEGE "${BIN[sed]}" -i 's/resolve dns/resolve [!UNAVAIL=return] dns/ /g' "${OSCHROOT}/etc/nsswitch.conf"
-    USE_PRIVILEGE "${BIN[sed]}" -i 's/^#*MulticastDNS.*/#MulticastDNS=/g' "${OSCHROOT}/etc/systemd/resolved.conf"
-  fi
 }
 
 function CONFIGURE_TIMEZONE {
