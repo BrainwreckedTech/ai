@@ -361,8 +361,8 @@ function CONFIGURE_LOCALE_AVAILABILITY {
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
     "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE'
   SELECTED="$(</tmp/selection)"
-  SELECTED"${SELECTED# }"
-  SELECTED"${SELECTED% }"
+  SELECTED="${SELECTED# }"
+  SELECTED="${SELECTED% }"
 
   ##############################################################################
   local BAKTITLE="Locale Availability"
@@ -371,12 +371,12 @@ function CONFIGURE_LOCALE_AVAILABILITY {
   unset SUGGESTS SELSTATE
 
   while read -r LOCALE; do
-    [[ ${LOCALE:0:1} == '#' ]] && SELSTATE+=(off) || SELSATE+=(on)
+    [[ ${LOCALE:0:1} == '#' ]] && SELSTATE+=(off) || SELSTATE+=(on)
     SUGGESTS+=("${LOCALE#'#'}")
   done <<< "$("${BIN[grep]}" "^\#*\(${SELECTED// /\\|}\).*\.UTF-8 UTF-8" "${CFG_FILE}" | "${BIN[sed]}" 's/\.UTF-8 UTF-8.*//g;')"
 
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
-    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE'
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE' || return 1
   SELECTED="$(</tmp/selection)"
 
   for LOCALE in "${SUGGESTS[@]}"; do
