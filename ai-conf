@@ -1262,9 +1262,9 @@ function ENABLE_SYSTEMD_SERVICES {
       SUGGESTS+=("${UNITFILE}")
       if [[ ${UNITFILE} =~ dm(-plymouth)*.service ]]; then
         DSPLYMGR="$("${BIN[readlink]}" "${OSCHROOT}/${SDUFIPTH}/display-manager.service")"
-        [[ ${UNITPATH} == ${DSPLYMGR} ]] && SELSTATE+=(on) || SELSTATE+=(off)
+        [[ ${UNITPATH} == "${DSPLYMGR}" ]] && SELSTATE+=(on) || SELSTATE+=(off)
       else
-        compgen -G "${OSCHROOT}/${SDUFIPTH}/*/${UNITFILE}" && SELSTATE+=(on) || SELSTATE+=(off)
+        compgen -G "${OSCHROOT}/${SDUFIPTH}/*/${UNITFILE}" > /dev/null && SELSTATE+=(on) || SELSTATE+=(off)
       fi
     fi
   done
