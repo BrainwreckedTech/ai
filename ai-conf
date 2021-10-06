@@ -127,7 +127,7 @@ function GET_RESOLV_LINK {
 
 function GET_HOSTS {
   "${BIN[grep]}" -v '^\s*#\|^\s*$' /etc/hosts | \
-    "${BIN[sed]}" 's/[a-z]*\.[a-z]*\.[a-z]*//g;s/\s\+/ = /g' | \
+    "${BIN[sed]}" 's/\s\+[0-9a-z-]*\.[0-9a-z-]*\.[0-9a-z-]*/ /g;s/\s\+$//g;s/\s\+/ = /g' | \
     "${BIN[tr]}" '\n' ',' | "${BIN[sed]}" 's/,$//g;s/,/, /g'
 }
 
