@@ -96,6 +96,23 @@ function CONVERT_NETMASK {
   esac
 }
 
+function FIND_EDITOR {
+  # Respect the user's preference, but if not specicified,
+  # try to find one in order from 'easiest' to 'hardest'.
+  if   [[ -n ${EDITOR}       ]]; then command -v "${EDITOR}"
+  elif [[ -e /bin/nano       ]]; then echo '/bin/nano'
+  elif [[ -e /usr/bin/mcedit ]]; then echo '/usr/bin/mcedit'
+  elif [[ -e /usr/bin/dte    ]]; then echo '/usr/bin/dte'
+  elif [[ -e /usr/bin/kak    ]]; then echo '/usr/bin/kak'
+  elif [[ -e /usr/bin/helix  ]]; then echo '/usr/bin/helix'
+  elif [[ -e /usr/bin/nvim   ]]; then echo '/usr/bin/nvim'
+  elif [[ -e /usr/bin/vis    ]]; then echo '/usr/bin/vis'
+  elif [[ -e /usr/bin/vim    ]]; then echo '/usr/bin/vim'
+  elif [[ -e /usr/bin/vi     ]]; then echo '/usr/bin/vi'
+  elif [[ -e /usr/bin/e3     ]]; then echo '/usr/bin/e3'
+  fi
+}
+
 function CHROOT_DIRECTORY {
   ##############################################################################
   local -r BAKTITLE="OS Mount Location"
@@ -139,24 +156,37 @@ function CONFIGURE_FSTAB {
   local -r BAKTITLE="fstab"
   local -r HELP_MSG="Copy ${HOME}/fstab to ${CFG_FILE}?"
   ##############################################################################
-  local SKIP_GEN=false
-  local FSTMTIME="$("${BIN[stat]}" -c %Y "${CFG_FILE}")"
+  local USRFSTAB=false FSTABSET=false
 
-  if [[ ${FSTMTIME} -gt ${SCRSTIME} ]]; then
-    WARNING="${CFG_FILE} has already been written to.  Overwrite it?"
-    DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${WARNING}" || return 1
-  fi
+  IS_FSTAB_SET && FSTABSET=true || FSTABSET=false
+  [[ -e ${HOME}/fstab ]] && USRFSTAB=true || USRFSTAB=false
 
-  if [[ -e "${HOME}/fstab" ]]; then
+  if ${FSTABSET}; then
+    if ${USRFSTAB}; then
+      WARNING="Found ${HOME}/fstab but ${CFG_FILE} has already been written to.\n"
+      WARNING+="Reset ${CFG_FILE} with ${HOME}/fstab?"
+      if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${WARNING}"; then
+        USE_PRIVILEGE sh -c "'${BIN[grep]}' '^\s*#' '${CFG_FILE}' > '${CFG_FILE}.tmp'"
+        USE_PRIVILEGE sh -c "'${BIN[grep]}' 'file *systems*\|details' '${CFG_FILE}.tmp' > '${CFG_FILE}'"
+        USE_PRIVILEGE "${BIN[rm]}" "${CFG_FILE}.tmp"
+        USE_PRIVILEGE sh -c "'${BIN[cat]}' '${HOME}/fstab' >> '${CFG_FILE}'"
+      else
+        USE_PRIVILEGE "$(FIND_EDITOR)" "${CFG_FILE}"
+      fi
+    else
+      USE_PRIVILEGE "$(FIND_EDITOR)" "${CFG_FILE}"
+    fi
+  elif ${USRFSTAB}; then
     if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
       USE_PRIVILEGE sh -c "'${BIN[cat]}' '${HOME}/fstab' >> '${CFG_FILE}'"
-      SKIP_GEN=true
+    elif DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "Use genfstab?"; then
+      USE_PRIVILEGE sh -c "'${BIN[genfstab]}' -L '${OSCHROOT}' | \
+        '${BIN[sed]}' 's/^#.*//g;s/\s\+/\t/g;s/\([0-9]\)\t\([0-9]\)$/\1 \2/g' | \
+        '${BIN[sed]}' '/^$/d' >> '${OSCHROOT}/etc/fstab'"
+    else
+      USE_PRIVILEGE "$(FIND_EDITOR)" "${CFG_FILE}"
     fi
   fi
-
-  ${SKIP_GEN} || USE_PRIVILEGE sh -c "'${BIN[genfstab]}' -L '${OSCHROOT}' | \
-    ${BIN[sed]} 's/^#.*//g;s/\s\+/\t/g;s/\([0-9]\)\t\([0-9]\)$/\1 \2/g' | \
-    ${BIN[sed]} '/^$/d' >> '${OSCHROOT}/etc/fstab'"
 }
 
 function CONFIGURE_HOSTNAME {
