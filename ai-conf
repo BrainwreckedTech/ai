@@ -208,13 +208,13 @@ function CONFIGURE_HOSTS {
   fi
 }
 
-function CONFIGURE_INITRAMFS_COMPRESSION {
+function CONFIGURE_MKINITCPIO_COMPRESSION {
   local -r CFG_FILE="${OSCHROOT}/etc/mkinitcpio.conf"
   [[ -e "${CFG_FILE}" ]] || return 0
   local -r CFG_ITEM="COMPRESSION"
   ##############################################################################
-  local -r BAKTITLE="InitRAMFS Compression"
-  local -r HELP_MSG="Select InitRAMFS compression:"
+  local -r BAKTITLE="MkInitCPIO Compression"
+  local -r HELP_MSG="Choose how MkInitCPIO compresses the InitRAMFS:"
   ##############################################################################
   local -a SUGGESTS
   local SELECTED PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d'"' -f2)"
@@ -241,12 +241,12 @@ function CONFIGURE_INITRAMFS_COMPRESSION {
   fi
 }
 
-function CONFIGURE_INITRAMFS_HOOKS {
+function CONFIGURE_MKINITCPIO_HOOKS {
   local -r CFG_FILE="${OSCHROOT}/etc/mkinitcpio.conf"
   [[ -e "${CFG_FILE}" ]] || return 0
   local -r CFG_ITEM="HOOKS"
   ##############################################################################
-  local -r BAKTITLE='InitRAMFS Hooks'
+  local -r BAKTITLE='MkInitCPIO Hooks'
   local -r HELP_MSG='NOTE: Do NOT wantonly disable base or udev unless you know what you are doing!!!'
   ##############################################################################
   local -a VALHOOKS SUGGESTS DESCRIPS SELSTATE
@@ -291,12 +291,12 @@ function CONFIGURE_INITRAMFS_HOOKS {
   USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*${CFG_ITEM}=.*/${CFG_ITEM}=(${SELECTED})/g" "${CFG_FILE}"
 }
 
-function CONFIGURE_INITRAMFS_MODULES {
+function CONFIGURE_MKINITCPIO_MODULES {
   local -r CFG_FILE="${OSCHROOT}/etc/mkinitcpio.conf"
   [[ -e "${CFG_FILE}" ]] || return 0
   local -r CFG_ITEM="MODULES"
   ##############################################################################
-  local -r BAKTITLE='InitRAMFS Modules'
+  local -r BAKTITLE='MkInitCPIO Modules'
   local HELP_MSG='You normally do not need to add modules to the InitRAMFS.\n'
   HELP_MSG+='However you might want to do so under special circumstances.\n\n'
   HELP_MSG+='NVIDIA Early KMS: nvidia + nvidia_drm + nvidia_modeset + nvidia_uvm\n'
@@ -1487,9 +1487,9 @@ function WIZARD_MODE {
   CONFIGURE_HOSTNAME
   CONFIGURE_LOCAL_DOMAIN
   CONFIGURE_HOSTS
-  CONFIGURE_INITRAMFS_MODULES
-  CONFIGURE_INITRAMFS_HOOKS
-  CONFIGURE_INITRAMFS_COMPRESSION
+  CONFIGURE_MKINITCPIO_MODULES
+  CONFIGURE_MKINITCPIO_HOOKS
+  CONFIGURE_MKINITCPIO_COMPRESSION
   CONFIGURE_PACMAN_OPTIONS
   CONFIGURE_PACMAN_REPOS
   CONFIGURE_PACMAN_KEYS
