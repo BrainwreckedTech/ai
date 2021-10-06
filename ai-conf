@@ -360,7 +360,6 @@ function GET_USERNAME_GROUP_MEMBERSHIP_COUNT {
 }
 
 function GET_USERNAME_PASSWORD {
-  set -x
   local USERLIST LOGINAME PSWRDSTR SHRT_OUT LONG_OUT
 
   [[ -n "${1}" ]] && USERLIST="${1}" || USERLIST="$(GET_USERNAMES | "${BIN[sed]}" 's/:[a-z]\+ / /g')"
