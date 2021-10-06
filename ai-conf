@@ -360,12 +360,13 @@ function GET_USERNAME_GROUP_MEMBERSHIP_COUNT {
 }
 
 function GET_USERNAME_PASSWORD {
+  set -x
   local USERLIST LOGINAME PSWRDSTR SHRT_OUT LONG_OUT
 
   [[ -n "${1}" ]] && USERLIST="${1}" || USERLIST="$(GET_USERNAMES | "${BIN[sed]}" 's/:[a-z]\+ / /g')"
 
   for LOGINAME in ${USERLIST}; do
-    PSWRDSTR="$("${BIN[sudo]}" "${BIN[grep]}" "${UNAME%:*}" "${OSCHROOT}/etc/shadow" | "${BIN[cut]}" -d: -f2)"
+    PSWRDSTR="$("${BIN[sudo]}" "${BIN[grep]}" "${LOGINAME%:*}" "${OSCHROOT}/etc/shadow" | "${BIN[cut]}" -d: -f2)"
     case "${PSWRDSTR}" in
                *'!'*) SHRT_OUT+="${LOGINAME}:locked "; LONG_OUT='locked out';;
               '$1$'*) SHRT_OUT+="${LOGINAME}:MD5 "; LONG_OUT='password-protected (MD5)';;
