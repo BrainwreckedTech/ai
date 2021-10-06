@@ -495,7 +495,7 @@ function CONFIGURE_HOSTNAME {
   local -r BAKTITLE="Hostname"
   local -r HELP_MSG="Set your hostname"
   ##############################################################################
-  DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "$(<"${CFG_FILE}")"
+  DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "$(<"${CFG_FILE}")" || return 1
   SELECTED=$(</tmp/selection)
   USE_PRIVILEGE sh -c "echo '${SELECTED}' > '${CFG_FILE}'"
 }
@@ -516,7 +516,7 @@ function CONFIGURE_HOSTS {
   DESCRIPS=('This computer uses a dynamic IP address' 'This computer uses a static IP address')
 
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' '127.0.0.1' \
-    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS'
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
   SELECTED="$(</tmp/selection)"
 
   USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
@@ -552,7 +552,7 @@ function CONFIGURE_MKINITCPIO_COMPRESSION {
   SUGGESTS=(cat bzip2 gzip lz4 lzma lzop xz zstd)
 
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${PREV_CFG}" \
-    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' || return 1
   SELECTED="$(</tmp/selection)"
 
   # Set all COMPRESSION options to be commented out
@@ -614,7 +614,7 @@ function CONFIGURE_MKINITCPIO_HOOKS {
   done
 
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
-    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return 1
   SELECTED="$(</tmp/selection)"
   USE_PRIVILEGE "${BIN[sed]}" -i "s/^\s*${CFG_ITEM}=.*/${CFG_ITEM}=(${SELECTED})/g" "${CFG_FILE}"
 }
@@ -645,7 +645,7 @@ function CONFIGURE_MKINITCPIO_MODULES {
     if [[ ${SELECTED} != '-' ]]; then
       DIALOG_MSGBOX "${TITLEBAR}" "${BAKTITLE}" "Invalid characters in module list."
     fi
-    DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "${PREV_CFG}"
+    DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "${PREV_CFG}" || return 1
     SELECTED="$(</tmp/selection)"
     PREV_CFG="${SELECTED}"
   done
@@ -724,7 +724,7 @@ function CONFIGURE_LOCALE_COLLATION {
   [[ -z ${PREV_CFG} ]] && PREV_CFG='POSIX'
   SUGGESTS=(POSIX C "$("${BIN[grep]}" 'LANG=' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)")
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${PREV_CFG}" \
-    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' || return 1
   SELECTED=$(</tmp/selection)
 
   USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
@@ -753,7 +753,7 @@ function CONFIGURE_LOCALE_LANGUAGE {
 
   if [[ ${#SUGGESTS[@]} -gt 1 ]]; then
     DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "$(GET_PRIMARY_LANGUAGE)" \
-      "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
+      "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' || return 1
     SELECTED="$(</tmp/selection)"
   else
     SELECTED="${SUGGESTS[0]}"
@@ -790,7 +790,7 @@ function CONFIGURE_LOCALE_MESSAGES {
   [[ -z ${PREV_CFG} ]] && PREV_CFG='C'
   SUGGESTS=(POSIX C "$("${BIN[grep]}" 'LANG=' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)")
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${PREV_CFG}" \
-    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' || return 1
   SELECTED=$(</tmp/selection)
 
   USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
@@ -860,7 +860,7 @@ function CONFIGURE_NANORC_OPTIONS {
   done
 
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
-    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return 1
   SELECTED="$(</tmp/selection)"
 
   for (( LC=0 ; LC<${#SUGGESTS[@]} ; LC++ )); do
@@ -977,7 +977,7 @@ function CONFIGURE_PACMAN_OPTIONS {
   done
 
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
-    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return 1
   SELECTED="$(</tmp/selection)"
 
   for (( LC=0 ; LC<${#SUGGESTS[@]} ; LC++ )); do
@@ -1021,7 +1021,7 @@ function CONFIGURE_PACMAN_REPOS {
   done
 
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
-    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return 1
   SELECTED="$(</tmp/selection)"
 
   for (( LC=0 ; LC<${#SUGGESTS[@]} ; LC++ )); do
@@ -1098,7 +1098,7 @@ function CONFIGURE_PLYMOUTH {
   done
 
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' "${PREV_CFG}" \
-    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS'
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
   SELECTED="$(</tmp/selection)"
 
   if ! "${BIN[grep]}" 'HOOKS' "${OSCHROOT}/etc/mkinitcpio.conf" | "${BIN[grep]}" -v '^\s*#' | "${BIN[grep]}" 'plymouth'; then
@@ -1156,7 +1156,7 @@ function CONFIGURE_SMARTD_DEVICESCAN {
   [[ ${PREV_CFG} =~ '-s' ]] && SELSTATE+=(on) || SELSTATE+=(off)
 
   DIALOG_MULTI_SELECT "${BACK_TTL}" "${MAIN_TTL}" 'hidetags' \
-    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return 1
   SELECTED="$(</tmp/selection)"
 
   SELECTED="${SELECTED/a/-a}"
@@ -1166,15 +1166,15 @@ function CONFIGURE_SMARTD_DEVICESCAN {
   SELECTED="${SELECTED/S/-S on}"
 
   if [[ ${SELECTED} =~ -s ]]; then
-    #######################################################################
+    ############################################################################
     local HELP_MSG="Set hour of day for daily short self-tests:"
-    #######################################################################
-    DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 0 23 2
+    ############################################################################
+    DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 0 23 2 || return 1
     SELECTED="${SELECTED} (S/../.././$(</tmp/selection)"
-    #######################################################################
+    ############################################################################
     local HELP_MSG="Set hour of day for Sunday long self-tests:"
-    #######################################################################
-    DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 0 23 3
+    ############################################################################
+    DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 0 23 3 || return 1
     SELECTED="${SELECTED}|L/../../7/$(</tmp/selection))"
   fi
 
@@ -1259,7 +1259,7 @@ function CONFIGURE_SUDO {
   done
 
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
-    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return 1
   SELECTED="$(</tmp/selection)"
 
   GET_PRIVILEGE # Call this again just in case the credentials timed out
@@ -1368,14 +1368,14 @@ function CONFIGURE_SYSTEMD_RESOLVED {
 function CONFIGURE_SYSTEMD_SERVICE_START_TIMEOUT {
   local -r CFG_FILE="${OSCHROOT}/etc/systemd/system.conf"
   local -r CFG_ITEM="DefaultTimeoutStartSec"
-  #######################################################################
+  ##############################################################################
   local -r BAKTITLE="Default Service Startup Timeout"
   local -r HELP_MSG="Timeout (in seconds):"
-  #######################################################################
+  ##############################################################################
   local SELECTED PREV_CFG="$(GET_SYSTEMD_SERVICE_START_TIMEOUT | "${BIN[tr]}" -d 's')"
 
   [[ -z ${PREV_CFG} ]] && PREV_CFG='30'
-  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 30 90 "${PREV_CFG}"
+  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 30 90 "${PREV_CFG}" || return 1
   SELECTED="$(</tmp/selection)"
   USE_PRIVILEGE "${BIN[sed]}" -i "s/^.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}s/g" "${CFG_FILE}"
 }
@@ -1415,7 +1415,7 @@ function CONFIGURE_SYSTEMD_TIMESYNCD {
 
   [[ -z ${DEFAULTS[1]} ]] && DEFAULTS[1]='0.pool.ntp.org 1.pool.ntp.org 2.pool.ntp.org 3.pool.ntp.org'
 
-  DIALOG_FORM "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 'LBL_STRS' 'DEFAULTS'
+  DIALOG_FORM "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 'LBL_STRS' 'DEFAULTS' || return 1
   SELECTED="$(</tmp/selection)"
 
   USE_PRIVILEGE "${BIN[sed]}" -i "s/\s*#*\s*NTP=.*/NTP=${SELECTED%%$'\n'*}/g" "${CFG_FILE}"
@@ -1431,7 +1431,7 @@ function CONFIGURE_TIMEZONE {
 
   [[ -z ${PREV_CFG} ]] && PREV_CFG='/usr/share/zoneinfo/'
 
-  DIALOG_FILE_SELECT "${TITLEBAR}" "${BAKTITLE}" "${OSCHROOT}${PREV_CFG}"
+  DIALOG_FILE_SELECT "${TITLEBAR}" "${BAKTITLE}" "${OSCHROOT}${PREV_CFG}" || return 1
   SELECTED="$(</tmp/selection)"
   SELECTED="${SELECTED#"${OSCHROOT}"}"
   USE_PRIVILEGE "${BIN[ln]}" -fs "${SELECTED}" "${CFG_FILE}"
@@ -1451,7 +1451,7 @@ function CONFIGURE_VCONSOLE_FONT {
   IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${OSCHROOT}/usr/share/kbd/consolefonts" -name '*.psfu.gz' | "${BIN[sed]}" 's|.*/||g;s|\.psfu.gz||g' | "${BIN[sort]}")
 
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${PREV_CFG}" \
-    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE'
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE' || return 1
   SELECTED="$(</tmp/selection)"
 
   USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
@@ -1476,7 +1476,7 @@ function CONFIGURE_VCONSOLE_KEYMAP {
   IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${OSCHROOT}/usr/share/kbd/keymaps" \( -name "${COUNTRY,,}-*" -o -name "${COUNTRY,,}_*" -o -name "${COUNTRY,,}.*" \) | "${BIN[sed]}" 's|.*/||g;s|\.map\.gz||g' | "${BIN[sort]}")
 
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "$(GET_VCONSOLE_KEYMAP)" \
-    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' || return 1
   SELECTED="$(</tmp/selection)"
 
   USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
@@ -1671,7 +1671,7 @@ function SELECT_USER {
   done
 
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' '' \
-    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS'
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
   RETVALUE="${?}"
   "${BIN[sed]}" -i 's/:.*//g' /tmp/selection
   return "${RETVALUE}"
@@ -1682,7 +1682,7 @@ function SET_CHROOT_DIRECTORY {
   local -r BAKTITLE="OS Mount Location"
   local -r HELP_MSG="Where is the OS root filessystem mounted?"
   ##############################################################################
-  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt/
+  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt/ || return 1
   OSCHROOT="$(</tmp/selection)"
   [[ -z ${OSCHROOT} ]] && unset OSCHROOT
   [[ ${OSCHROOT} == '/'  ]] && unset OSCHROOT
