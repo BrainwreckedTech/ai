@@ -1136,10 +1136,10 @@ function CONFIGURE_SMARTD_DEVICESCAN {
   local -r CFG_FILE="${OSCHROOT}/etc/smartd.conf"
   [[ -e "${CFG_FILE}" ]] || return 0
   local -r CFG_ITEM="DEVICESCAN"
-  #######################################################################
+  ##############################################################################
   local -r BAKTITLE="SMART Device Scan Settings"
   local HELP_MSG="Choose device scan settings:"
-  #######################################################################
+  ##############################################################################
   local -a SUGGESTS DESCRIPS SELSTATE
   local SELECTED PREV_CFG="$(GET_SMARTD_DEVICESCAN)"
 
@@ -1337,23 +1337,23 @@ function CONFIGURE_SYSTEMD_LOGIND_HANDLELIDSWITCH {
 function CONFIGURE_SYSTEMD_JOUNRAL_SIZE {
   local -r CFG_FILE="${OSCHROOT}/etc/systemd/journald.conf"
   local -r CFG_ITEM="SystemMaxUse"
-  #######################################################################
+  ##############################################################################
   local -r BAKTITLE="Jouurnal Size"
   local -r HELP_MSG="Max Journal Size:"
-  #######################################################################
+  ##############################################################################
   local SELECTED PREV_CFG="$(GET_SYSTEMD_JOURNAL_SIZE | ${BIN[tr]} -d 'BKMGTbi')"
 
   [[ ${PREV_CFG} -lt 16 ]] && PREV_CFG='64'
-  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 16 4096 "${PREV_CFG}"
+  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 16 4096 "${PREV_CFG}" || return 1
   SELECTED="$(</tmp/selection)"
   USE_PRIVILEGE "${BIN[sed]}" -i "s/^.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}M/g" "${CFG_FILE}"
 }
 
 function CONFIGURE_SYSTEMD_RESOLVED {
-  #######################################################################
+  ##############################################################################
   local -r BAKTITLE="Resolver"
   local -r HELP_MSG="Use systemd-resolved?"
-  #######################################################################
+  ##############################################################################
   if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
     USE_PRIVILEGE "${BIN[ln]}" -fs '/run/systemd/resolve/resolv.conf' "${OSCHROOT}/etc/resolv.conf"
     USE_PRIVILEGE "${BIN[sed]}" -i 's/ [!UNAVAIL=return] / /g' "${OSCHROOT}/etc/nsswitch.conf"
@@ -1383,24 +1383,24 @@ function CONFIGURE_SYSTEMD_SERVICE_START_TIMEOUT {
 function CONFIGURE_SYSTEMD_SERVICE_STOP_TIMEOUT {
   local -r CFG_FILE="${OSCHROOT}/etc/systemd/system.conf"
   local -r CFG_ITEM="DefaultTimeoutStopSec"
-  #######################################################################
+  ##############################################################################
   local -r BAKTITLE="Default Service Stop Timeout"
   local -r HELP_MSG="Timeout (in seconds):"
-  #######################################################################
+  ##############################################################################
   local SELECTED PREV_CFG="$(GET_SYSTEMD_SERVICE_STOP_TIMEOUT | "${BIN[tr]}" -d 's')"
 
   [[ -z ${PREV_CFG} ]] && PREV_CFG='15'
-  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 15 45 "${PREV_CFG}"
+  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 15 45 "${PREV_CFG}" || return 1
   SELECTED="$(</tmp/selection)"
   USE_PRIVILEGE "${BIN[sed]}" -i "s/^.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}s/g" "${CFG_FILE}"
 }
 
 function CONFIGURE_SYSTEMD_TIMESYNCD {
   local -r CFG_FILE="${OSCHROOT}/etc/systemd/timesyncd.conf"
-  #######################################################################
+  ##############################################################################
   local -r BAKTITLE="systemd-timesyncd"
   local -r HELP_MSG="Configure NTP Servers:"
-  #######################################################################
+  ##############################################################################
   local -a DEFAULTS LBL_STRS=(NTP FallbackNTP)
   local REGION SELECTED
 
