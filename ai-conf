@@ -1178,7 +1178,7 @@ function CONFIGURE_VIDEO_ACCELERATION {
 		#!/usr/bin/env sh
 		
 		gmn() {
-		  lscpu | grep Model: | sed 's/\s\+//g' | cut -d: -f2
+		  /usr/bin/lscpu | /bin/grep Model: | /bin/sed 's/\s\+//g' | /usr/bin/cut -d: -f2
 		}
 		
 		case \"\\\$(lsmod)\" in
