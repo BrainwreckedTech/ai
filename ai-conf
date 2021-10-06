@@ -1018,10 +1018,10 @@ function CONFIGURE_SYSTEMD_JOUNRAL_SIZE {
   local -r BAKTITLE="Jouurnal Size"
   local -r HELP_MSG="Max Journal Size:"
   #######################################################################
-  local PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | ${BIN[tr]} -d 'BKMGTbi')"
+  local SELECTED PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | ${BIN[tr]} -d 'BKMGTbi')"
 
-  [[ -z ${PREV_CFG} ]] && PREV_CFG='64'
-  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 64 512 "${PREV_CFG}"
+  [[ ${PREV_CFG} -lt 16 ]] && PREV_CFG='64'
+  DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 16 4096 "${PREV_CFG}"
   SELECTED="$(</tmp/selection)"
   USE_PRIVILEGE "${BIN[sed]}" -i "s/^.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}M/g" "${CFG_FILE}"
 }
