@@ -892,7 +892,7 @@ function CONFIGURE_SUDO {
     EXISTCFG+="$("${BIN[sudo]}" sh -c "'${BIN[grep]}' -hv '^\s*#' ${OSCHROOT}${INCL_DIR}/*" | "${BIN[grep]}" -v "^\s*$")"
   fi
 
-  SUGGESTS+=(wheel passprompt passwd_timeout rootpw timestamp_type timestampe_timeout)
+  SUGGESTS+=(wheel passprompt passwd_timeout rootpw timestamp_type timestamp_timeout)
   DESCRIPS+=('Enable members of the wheel group to use sudo'
              'Set passprompt to "[sudo] password for %p: "'
              'Set passwd_timeout to 0 (sudo will not time out waiting for a password)'
