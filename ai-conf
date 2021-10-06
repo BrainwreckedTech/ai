@@ -12,18 +12,12 @@ declare OSCHROOT
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in cp curl date genfstab head ip ln localedef pacman-key \
-  passwd readlink rename stat systemctl tail tar useradd usermod; do
+for CMD in cp curl env genfstab head ip ln localedef pacman-key passwd \
+  paste readlink rename stat systemctl tail tar useradd usermod; do
     BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
-declare -r SCRSTIME="$(date +%s)"
-
 CHECK_FOR_FAILURE_POINTS
-
-function USE_PRIVILEGE {
-  GET_PRIVILEGE && "${BIN[sudo]}" "${@}" || return 1
-}
 
 function CONVERT_NETMASK {
   case "${1}" in
@@ -96,6 +90,11 @@ function CONVERT_NETMASK {
   esac
 }
 
+function USE_PRIVILEGE {
+  # This is just a wrapper so you don't have to type "${BIN[sudo]}" all the time
+  GET_PRIVILEGE && "${BIN[sudo]}" "${@}" || return 1
+}
+
 function FIND_EDITOR {
   # Respect the user's preference, but if not specicified,
   # try to find one in order from 'easiest' to 'hardest'.
@@ -113,13 +112,314 @@ function FIND_EDITOR {
   fi
 }
 
-function CHROOT_DIRECTORY {
-  ##############################################################################
-  local -r BAKTITLE="OS Mount Location"
-  local -r HELP_MSG="Where is the OS root filessystem mounted?"
-  ##############################################################################
-  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt/
-  OSCHROOT="$(</tmp/selection)"
+################################################################################
+# Function that retrieve configuration settings
+################################################################################
+
+function GET_DEFAULT_EDITOR {
+  # NOTE: This concerns the EDITOR environment variable in the chroot.
+  "${BIN[grep]}" -hRs 'export\s*EDITOR=' "${OSCHROOT}/etc/profile.d" | "${BIN[cut]}" -d= -f2
+}
+
+function GET_RESOLV_LINK {
+  "${BIN[readlink]}" "${OSCHROOT}/etc/resolv.conf"
+}
+
+function GET_HOSTS {
+  "${BIN[grep]}" -v '^\s*#\|^\s*$' /etc/hosts | \
+    "${BIN[sed]}" 's/[a-z]*\.[a-z]*\.[a-z]*//g;s/\s\+/ = /g' | \
+    "${BIN[tr]}" '\n' ',' | "${BIN[sed]}" 's/,$//g;s/,/, /g'
+}
+
+function GET_IPTABLES_PORTS_CLOSED_GLOBALLY {
+  "${BIN[grep]}" 'OUTPUT.*DROP' "${OSCHROOT}/etc/iptables/iptables.rules" | \
+  "${BIN[sed]}" 's/.*--dport \([0-9]\+\) .*/\1/g' | \
+  "${BIN[sort]}" -u | "${BIN[paste]}" -d\  -s
+}
+
+function GET_IPTABLES_PORTS_OPEN_GLOBALLY {
+  "${BIN[grep]}" -- '--dport\s\+[0-9]\+.*ACCEPT' "${OSCHROOT}/etc/iptables/iptables.rules" | \
+  "${BIN[grep]}" -v -- '-s [a-z.]\+\|-d [0-9./]\{9,18\}' | \
+  "${BIN[sed]}" 's/.*--dport \([0-9]\+\) .*/\1/g' | \
+  "${BIN[sort]}" -n | "${BIN[paste]}" -d\  -s
+}
+
+function GET_LANGUAGES {
+  "${BIN[grep]}" -v '^\s*#' "${OSCHROOT}/etc/locale.gen" | \
+    "${BIN[sed]}" 's/^\s*\([a-z]\{2,3\}\)_.*\.UTF-8 UTF-8.*/\1/g;' | \
+    "${BIN[sort]}" -u | "${BIN[paste]}" -d\  -s
+}
+
+function GET_LOCAL_DOMAIN {
+  "${BIN[grep]}" 'Domains=' "${OSCHROOT}/etc/systemd/resolved.conf" | "${BIN[cut]}" -d= -f2
+}
+
+function GET_LOCALES {
+  [[ -n ${1} ]] && LOCALES="$("${BIN[grep]}" "^\#*\(${1// /\\|}\).*\.UTF-8 UTF-8" /etc/locale.gen)"
+  [[ -z ${1} ]] && LOCALES="$("${BIN[grep]}" "^[a-z].*\.UTF-8 UTF-8" /etc/locale.gen)"
+  "${BIN[sed]}" 's/\.UTF-8 UTF-8.*//g;' <<< "${LOCALES}" | "${BIN[paste]}" -d\  -s
+}
+
+function GET_LOCALE_COLLATION {
+  "${BIN[grep]}" LC_COLLATE "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d= -f2
+}
+
+function GET_LOCALE_MESSAGES {
+  "${BIN[grep]}" LC_MESSAGES "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d= -f2
+}
+
+function GET_MKINITCPIO_COMPRESSION {
+  local COMPTYPE
+  COMPTYPE=$("${BIN[grep]}" '^\s*COMPRESSION=' "${OSCHROOT}/etc/mkinitcpio.conf" | "${BIN[cut]}" -d\" -f2)
+  echo "${COMPTYPE:-zstd}"
+}
+
+function GET_MKINITCPIO_HOOKS {
+  "${BIN[grep]}" '^\s*HOOKS=' "${OSCHROOT}/etc/mkinitcpio.conf" | "${BIN[sed]}" 's/.*(\(.*\)).*/\1/g'
+}
+
+function GET_MKINITCPIO_MODULES {
+  "${BIN[grep]}" '^\s*MODULES=' "${OSCHROOT}/etc/mkinitcpio.conf" | "${BIN[sed]}" 's/.*(\(.*\)).*/\1/g'
+}
+
+function GET_NANORC_COLORS {
+  local WHOHASIT
+
+  "${BIN[grep]}" -q '^\s*set [a-z]\+color [a-z,]\+' "${OSCHROOT}/etc/nanorc" && WHOHASIT+='Set globally '
+  USE_PRIVILEGE "${BIN[grep]}" -qsR '^\s*set [a-z]\+color [a-z,]\+' "${OSCHROOT}/root/.nanorc" && WHOHASIT+='and by root '
+  USE_PRIVILEGE "${BIN[grep]}" -qsR '^\s*set [a-z]\+color [a-z,]\+' "${OSCHROOT}/root/.config/nano/nanorc" && WHOHASIT+='and by root '
+  for USERHOME in "${OSCHROOT}"/home/*; do
+    USE_PRIVILEGE "${BIN[grep]}" -qsR '^\s*set [a-z]\+color [a-z,]\+' "${USERHOME}/.nanorc" && WHOHASIT+="and by ${USERHOME##*\/} "
+    USE_PRIVILEGE "${BIN[grep]}" -qsR '^\s*set [a-z]\+color [a-z,]\+' "${USERHOME}/.config/nano/nanorc" && WHOHASIT+="and by ${USERHOME##*\/} "
+  done
+  echo "${WHOHASIT% }"
+}
+
+function GET_NANORC_INCLUDES {
+  "${BIN[grep]}" '^\s*include' "${OSCHROOT}/etc/nanorc" | "${BIN[cut]}" -d\  -f2 | \
+  "${BIN[tr]}" -d '"' | "${BIN[paste]}" -d,  -s | "${BIN[sed]}" 's/,/, /g'
+}
+
+function GET_NANORC_OPTIONS {
+  local NANOOPTS="$("${BIN[grep]}" 'set ' "${OSCHROOT}/etc/nanorc" | "${BIN[grep]}" -v '[.,:;\"0-9]\|color')"
+
+  case "${1}" in
+    all)
+      NANOOPTS=$("${BIN[sed]}" 's/^\s*\#*\s*set //g' <<< "${NANOOPTS}");;
+    enabled)
+      NANOOPTS=$("${BIN[grep]}" -v '^\s*#' <<< "${NANOOPTS}" | "${BIN[sed]}" 's/^\s*set\s*//g');;
+  esac
+
+  ${BIN[sort]} -u <<< "${NANOOPTS}" | ${BIN[paste]} -d\  -s
+}
+
+function GET_NSSWITCH_HOSTS {
+  "${BIN[grep]}" '^\s*hosts' "${OSCHROOT}/etc/nsswitch.conf" | "${BIN[sed]}" 's/\s*hosts:\s*//g'
+}
+
+function GET_PACMAN_REPOS {
+  "${BIN[grep]}" '^\[' "${OSCHROOT}/etc/pacman.conf" | \
+    ${BIN[grep]} -v options | "${BIN[tr]}" -d '[]' | "${BIN[paste]}" -d\  -s
+}
+
+function GET_PACMAN_OPTIONS {
+  "${BIN[grep]}" '^[A-Z]' /etc/pacman.conf | \
+  "${BIN[grep]}" -v 'Architecture\|Dir\|Hold\|Ignore\|Server\|Include\|SigLevel' | \
+  "${BIN[tr]}" -d ' ' | "${BIN[paste]}" -d\  -s
+}
+
+function GET_PRIMARY_LANGUAGE {
+  "${BIN[grep]}" LANGUAGE "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d= -f2
+}
+
+function GET_PLYMOUTH_THEME {
+  "${BIN[grep]}" Theme "${OSCHROOT}/etc/plymouth/plymouthd.conf" | "${BIN[tr]}" 'T' 't'
+}
+
+function GET_SMARTD_DEVICESCAN {
+  "${BIN[grep]}" '^\s*DEVICESCAN' "${OSCHROOT}/etc/smartd.conf" | "${BIN[sed]}" 's/^\s*DEVICESCAN\s*//g'
+}
+
+function GET_SSHD_LISTEN_INFO {
+  local CFG_FILE="${OSCHROOT}/etc/ssh/sshd_config"
+  local GREP_STR='^\s*\(Port\|AddressFamily\|ListenAddress\)'
+  local RETVALUE="Service "
+
+  IS_SSHD_ENABLED && RETVALUE+="enabled," || RETVALUE+="disabled,"
+  RETVALUE+="$("${BIN[grep]}" "${GREP_STR}" "${CFG_FILE}" | "${BIN[sort]}" | \
+    "${BIN[sed]}" 's/Address//g' | "${BIN[paste]}" -d,  -s)"
+
+  "${BIN[sed]}" 's/,/, /g;s/Listen/Address/g' <<< "${RETVALUE}"
+}
+
+function GET_SYSTEMD_JOURNAL_SIZE {
+  { "${BIN[grep]}" '^\s*SystemMaxUse' "${OSCHROOT}/etc/systemd/journald.conf" || echo default; } | "${BIN[cut]}" -d= -f2
+}
+
+function GET_SYSTEMD_RESOLVED {
+  "${BIN[grep]}" '^\s*[A-Z]' "${OSCHROOT}/etc/systemd/resolved.conf" | "${BIN[paste]}" -d\  -s
+}
+
+function GET_SYSTEMD_LOGIND_HANDLELIDSWITCH {
+  { "${BIN[grep]}" -s '^\s*HandleLidSwitch=' "${OSCHROOT}/etc/systemd/logind.conf" || echo '=default (suspend)'; } | "${BIN[cut]}" -d= -f2
+}
+
+function GET_SYSTEMD_SERVICE_START_TIMEOUT {
+  { "${BIN[grep]}" '^\s*DefaultTimeoutStartSec' "${OSCHROOT}/etc/systemd/system.conf" || echo default; } | "${BIN[cut]}" -d= -f2
+}
+
+function GET_SYSTEMD_SERVICE_STOP_TIMEOUT {
+  { "${BIN[grep]}" '^\s*DefaultTimeoutStopSec' "${OSCHROOT}/etc/systemd/system.conf" || echo default; } | "${BIN[cut]}" -d= -f2
+}
+
+function GET_SYSTEMD_TIMESYNCD_SERVERS {
+  "${BIN[grep]}" -v '^\s*[#\[]\|^\s*$' "${OSCHROOT}/etc/systemd/timesyncd.conf" | \
+    "${BIN[cut]}" -d= -f2 | "${BIN[paste]}" -d\  -s
+}
+
+function GET_SUDO_CONFIG {
+  # This function gathers up all the uncommented options present between
+  # /etc/sudoers and its @includedir directive
+  local SUDO_CFG INCL_DIR
+
+  # Parse the config file into a variable (ignore commented-out and blank lines)
+  SUDO_CFG="$("${BIN[sudo]}" "${BIN[grep]}" -v '^\s*#\|^$' "${OSCHROOT}/etc/sudoers")"
+
+  if [[ ${SUDO_CFG} =~ @includedir ]]; then
+    # If the config file specified an @includedir, get configs from those files as well
+    INCL_DIR="$("${BIN[grep]}" 'includedir' <<< "${SUDO_CFG}" | "${BIN[cut]}" -d\  -f2)"
+    SUDO_CFG+=$'\n' # The trailing newline got stripped out, so add it back in
+    SUDO_CFG+="$("${BIN[sudo]}" sh -c "'${BIN[grep]}' -hv '^\s*#' ${OSCHROOT}${INCL_DIR}/*" | "${BIN[grep]}" -v "^\s*$")"
+  fi
+
+  echo "${SUDO_CFG}"
+}
+
+function INTERPRET_SUDO_CONFIG {
+  # This function differs from GET_SUDO_CONFIG in that it tries to present the
+  # configuration in natural language rather than straight-up config file format
+  local MEANING SUDO_CFG="$(GET_SUDO_CONFIG)"
+
+  [[ ${SUDO_CFG} =~ %wheel ]] && MEANING+='wheel can use, '
+  [[ ${SUDO_CFG} =~ rootpw ]] && MEANING+='require root password, '
+  [[ ${SUDO_CFG} =~ passprompt ]] && MEANING+='custom prompt set, '
+
+  if [[ ${SUDO_CFG} =~ passwd_timeout ]]; then
+    TIMEOUT="$("${BIN[grep]}" passwd_timeout <<< "${SUDO_CFG}" | "${BIN[cut]}" -d= -f2)"
+    if [[ ${TIMEOUT} == 0 ]]; then
+      MEANING+='no password timeout, '
+    else
+      MEANING+="password timeout in ${TIMEOUT} minutes"
+    fi
+  fi
+
+  [[ ${SUDO_CFG} =~ 'timestamp_type global' ]] && MEANING+='global authentication, '
+
+  if [[ ${SUDO_CFG} =~ timestamp_timeout ]]; then
+    TIMEOUT="$("${BIN[grep]}" timestamp_timeout <<< "${SUDO_CFG}" | "${BIN[cut]}" -d= -f2)"
+    if [[ ${TIMEOUT} == 0 ]]; then
+      MEANING+='always prompt for password, '
+    elif [[ ${TIMEOUT} -lt 0 ]]; then
+      MEANING+="credentials cached forever, "
+    else
+      MEANING+="credential timeout in ${TIMEOUT} minutes"
+    fi
+  fi
+
+  "${BIN[sed]}" 's/, $//g' <<< "${MEANING}"
+}
+
+function GET_TIMEZONE {
+  local TIMEZONE="$("${BIN[readlink]}" "${OSCHROOT}/etc/localtime")"
+  case "${1}" in
+    short) "${BIN[sed]}" 's|.*zoneinfo/||g' <<< "${TIMEZONE}";;
+     full) echo "${TIMEZONE}";;
+  esac
+}
+
+function GET_USERNAMES {
+  local USRWPGID THISUSER PGRPNAME RETVALUE
+  USRWPGID=$("${BIN[grep]}" ':x:0:\|:x:[0-9]\{4\}:' "${OSCHROOT}/etc/passwd" | "${BIN[cut]}" -d: -f1,4 | "${BIN[tr]}" '\n' ' ')
+
+  for THISUSER in ${USRWPGID}; do
+    PGRPNAME=$("${BIN[grep]}" ":${THISUSER#*:}:" "${OSCHROOT}/etc/group" | "${BIN[cut]}" -d: -f1)
+    RETVALUE+="${THISUSER%:*}:${PGRPNAME} "
+  done
+
+  "${BIN[paste]}" -d\  -s <<< "${RETVALUE}"
+}
+
+function GET_USERNAME_GROUP_MEMBERSHIP_COUNT {
+  local LOGINAME GRPCOUNT RETVALUE
+  for LOGINAME in $(GET_USERNAMES | "${BIN[sed]}" 's/:[a-z]\+ / /g'); do
+    GRPCOUNT=$("${BIN[grep]}" "${LOGINAME}" "${OSCHROOT}/etc/group" | "${BIN[wc]}" -l)
+    RETVALUE+="${LOGINAME} in ${GRPCOUNT}, "
+  done
+
+  "${BIN[sed]}" 's/, $//g' <<< "${RETVALUE}"
+}
+
+function GET_USERNAME_PASSWORD {
+  local USERLIST LOGINAME PSWRDSTR SHRT_OUT LONG_OUT
+
+  [[ -n "${1}" ]] && USERLIST="${1}" || USERLIST="$(GET_USERNAMES | "${BIN[sed]}" 's/:[a-z]\+ / /g')"
+
+  for LOGINAME in ${USERLIST}; do
+    PSWRDSTR="$("${BIN[sudo]}" "${BIN[grep]}" "${UNAME%:*}" "${OSCHROOT}/etc/shadow" | "${BIN[cut]}" -d: -f2)"
+    case "${PSWRDSTR}" in
+               *'!'*) SHRT_OUT+="${LOGINAME}:locked "; LONG_OUT='locked out';;
+              '$1$'*) SHRT_OUT+="${LOGINAME}:MD5 "; LONG_OUT='password-protected (MD5)';;
+      '$2'[abxy]'$'*) SHRT_OUT+="${LOGINAME}:Blowfish "; LONG_OUT='password-protected (Blowfish)';;
+              '$5$'*) SHRT_OUT+="${LOGINAME}:SHA256 "; LONG_OUT='password-protected (SHA256)';;
+              '$6$'*) SHRT_OUT+="${LOGINAME}:SHA512 "; LONG_OUT='password-protected (SHA512)';;
+                   *) SHRT_OUT+="${LOGINAME}:open "; LONG_OUT='unprotected'
+    esac
+  done
+
+  [[ -n "${1}" ]] && echo "${LONG_OUT}" || echo "${SHRT_OUT}" | "${BIN[paste]}" -d\  -s
+}
+
+function GET_USERNAME_SHELL {
+  "${BIN[grep]}" ':x:0:\|:x:[0-9]\{4\}:' "${OSCHROOT}/etc/passwd" | "${BIN[cut]}" -d: -f1,7 | "${BIN[sed]}" 's|/.*/||g' | "${BIN[paste]}" -d\  -s
+}
+
+function GET_VCONSOLE_FONT {
+  "${BIN[grep]}" FONT "${OSCHROOT}/etc/vconsole.conf" | "${BIN[cut]}" -d= -f2
+}
+
+function GET_VCONSOLE_KEYMAP {
+  "${BIN[grep]}" KEYMAP "${OSCHROOT}/etc/vconsole.conf" | "${BIN[cut]}" -d= -f2
+}
+
+function GET_VIDEO_ACCELERATION_SCRIPT_RESULTS {
+  local CFG_FILE="${OSCHROOT}/etc/profile.d/video-accel.sh"
+  [[ -e "${CFG_FILE}" ]] && \
+    "${BIN[env]}" -i sh -c "source ${CFG_FILE}; set" | \
+      "${BIN[grep]}" DRIVER | "${BIN[paste]}" -d\  -s
+}
+
+function IS_FSTAB_SET {
+  "${BIN[grep]}" -qv '^\s*#\|^\s*$' "${OSCHROOT}/etc/fstab"
+}
+
+function IS_PLYMOUTH_HOOK_PRESENT {
+  "${BIN[grep]}" -q '^\s*HOOKS\s*=\s*(.*plymouth.*)\s*' "${OSCHROOT}/etc/mkinitcpio.conf"
+}
+
+function IS_POLICYKIT_ROOTPW_SET {
+  USE_PRIVILEGE "${BIN[grep]}" -qsR 'return\s*\[\s*.\s*unix-user\s*:\s*root\s*.\s*\]\s*;' "${OSCHROOT}/etc/polkit-1/rules.d"
+}
+
+function IS_SSHD_ENABLED {
+  set -- ${OSCHROOT}/etc/systemd/system/*/sshd.service; test -f "${1}"
+}
+
+function IS_STICKYDIRS_FIXED {
+  "${BIN[grep]}" -qsR '\s*fs\.protected_regular\s*=\s*0' "${OSCHROOT}/etc/sysctl.d"
+}
+
+function IS_SYSTEMD_RESOLVED_ENABLED {
+  set -- ${OSCHROOT}/etc/systemd/system/*/systemd-resolved.service; test -f "${1}"
 }
 
 function CONFIGURE_DEFAULT_EDITOR {
@@ -130,7 +430,7 @@ function CONFIGURE_DEFAULT_EDITOR {
   local -r HELP_MSG="Select your default console text editor:"
   ##############################################################################
   local -a SUGGESTS DESCRIPS
-  local SELECTED KNOWN KNOWNS PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)"
+  local SELECTED KNOWN KNOWNS PREV_CFG="$(GET_DEFAULT_EDITOR)"
 
   KNOWNS+=(dte:/usr/bin/dte   e3:/usr/bin/e3       helix:/usr/bin/helix)
   KNOWNS+=(helix:/usr/bin/hx  kakoune:/usr/bin/kak mcedit:/usr/bin/mcedit)
@@ -247,9 +547,7 @@ function CONFIGURE_MKINITCPIO_COMPRESSION {
   local -r HELP_MSG="Choose how MkInitCPIO compresses the InitRAMFS:"
   ##############################################################################
   local -a SUGGESTS
-  local SELECTED PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d'"' -f2)"
-
-  [[ -z ${PREV_CFG} ]] && PREV_CFG=zstd
+  local SELECTED PREV_CFG="$(GET_MKINITCPIO_COMPRESSION)"
 
   SUGGESTS=(cat bzip2 gzip lz4 lzma lzop xz zstd)
 
@@ -280,7 +578,7 @@ function CONFIGURE_MKINITCPIO_HOOKS {
   local -r HELP_MSG='NOTE: Do NOT wantonly disable base or udev unless you know what you are doing!!!'
   ##############################################################################
   local -a VALHOOKS SUGGESTS DESCRIPS SELSTATE
-  local THISHOOK HELPTEXT SELECTED PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[sed]}" 's/.*(\(.*\)).*/\1/g')"
+  local THISHOOK HELPTEXT SELECTED PREV_CFG="$(GET_INITRAMS_HOOKS)"
 
   # These are the hooks we are willing to deal with.  As the systemd stuff isn't
   # well documented, we won't deal with it and will stick with the busybox stuff.
@@ -340,7 +638,7 @@ function CONFIGURE_MKINITCPIO_MODULES {
   HELP_MSG+='Enter space-delimited list of modules to include in the InitRAMFS:'
   ##############################################################################
   local -a SUGGESTS
-  local SELECTED PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[sed]}" 's/.*(\(.*\)).*/\1/g')"
+  local SELECTED PREV_CFG="$(GET_MKINITCPIO_MODULES)"
 
   SELECTED='-'
   until [[ ${SELECTED} =~ ^[a-zA-Z0-9_' ']+$ ]]; do
@@ -361,7 +659,7 @@ function CONFIGURE_LOCAL_DOMAIN {
   local -r BAKTITLE="Local Domain Name"
   local -r HELP_MSG="Enter this computer'\\''s local domain:"
   ##############################################################################
-  local SELECTED PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)"
+  local SELECTED PREV_CFG="$(GET_LOCAL_DOMAIN)"
 
   DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "${PREV_CFG}" || return 1
   SELECTED=$(</tmp/selection)
@@ -375,7 +673,7 @@ function CONFIGURE_LOCALE_AVAILABILITY {
   local HELP_MSG="Select the languages you would like to use:"
   ##############################################################################
   local -a SUGGESTS SELSTATE
-  local LANGUAGE LOCALE SELECTED SEL_LANG="$("${BIN[grep]}" -v '^\s*#' "${CFG_FILE}" | "${BIN[sed]}" 's/^\s*\([a-z]\{2,3\}\)_.*\.UTF-8 UTF-8.*/\1/g;' | "${BIN[sort]}" -u)"
+  local LANGUAGE LOCALE SELECTED SEL_LANG="$(GET_LANGUAGES)"
 
   while read -r LANGUAGE; do
     SUGGESTS+=("${LANGUAGE}")
@@ -394,10 +692,10 @@ function CONFIGURE_LOCALE_AVAILABILITY {
   ##############################################################################
   unset SUGGESTS SELSTATE
 
-  while read -r LOCALE; do
+  for LOCALE in $(GET_LOCALES "${SELECTED}"); do
     [[ ${LOCALE:0:1} == '#' ]] && SELSTATE+=(off) || SELSTATE+=(on)
     SUGGESTS+=("${LOCALE#'#'}")
-  done <<< "$("${BIN[grep]}" "^\#*\(${SELECTED// /\\|}\).*\.UTF-8 UTF-8" "${CFG_FILE}" | "${BIN[sed]}" 's/\.UTF-8 UTF-8.*//g;')"
+  done
 
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
     "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE' || return 1
@@ -421,10 +719,11 @@ function CONFIGURE_LOCALE_COLLATION {
   local -r HELP_MSG="Select your sorting style:"
   ##############################################################################
   local -a SUGGESTS SELSTATE
-  local SELECTED
+  local SELECTED PREV_CFG="$(GET_LOCALE_COLLATION)"
 
+  [[ -z ${PREV_CFG} ]] && PREV_CFG='POSIX'
   SUGGESTS=(POSIX C "$("${BIN[grep]}" 'LANG=' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)")
-  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' 'POSIX' \
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${PREV_CFG}" \
     "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
   SELECTED=$(</tmp/selection)
 
@@ -453,7 +752,7 @@ function CONFIGURE_LOCALE_LANGUAGE {
   done <<< "$("${BIN[grep]}" -v '\s*#' "${CFG_FILE/conf/gen}" | "${BIN[sed]}" 's/\.UTF-8 UTF-8.*//g;')"
 
   if [[ ${#SUGGESTS[@]} -gt 1 ]]; then
-    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "$(GET_PRIMARY_LANGUAGE)" \
       "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
     SELECTED="$(</tmp/selection)"
   else
@@ -486,11 +785,11 @@ function CONFIGURE_LOCALE_MESSAGES {
   local -r HELP_MSG="Select your message style:"
   ##############################################################################
   local -a SUGGESTS SELSTATE
-  local SELECTED
+  local SELECTED PREV_CFG="$(GET_LOCALE_MESSAGES)"
 
+  [[ -z ${PREV_CFG} ]] && PREV_CFG='C'
   SUGGESTS=(POSIX C "$("${BIN[grep]}" 'LANG=' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)")
-
-  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' 'C' \
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${PREV_CFG}" \
     "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
   SELECTED=$(</tmp/selection)
 
@@ -550,11 +849,15 @@ function CONFIGURE_NANORC_OPTIONS {
   local -a SUGGESTS DESCRIPS SELSTATE
   local OPTION SELECTED LC
 
-  while read -r OPTION; do
+  for OPTION in $(GET_NANORC_OPTIONS all); do
     SUGGESTS+=("${OPTION}")
-    DESCRIPS+=("$("${BIN[grep]}" -B5 "set ${OPTION}" "${CFG_FILE}" | ${BIN[grep]} -v '^#bind' | "${BIN[grep]}" -v '^\s*#*\s*set ' | "${BIN[grep]}" -v -- '--' | "${BIN[sed]}" ':a;N;$!ba;s/.*\n\n//g' | "${BIN[sed]}" 's/^## //g' | "${BIN[tr]}" '\n' ' ' | "${BIN[sed]}" 's/ $//g' | "${BIN[sed]}" "s/'/'\\\''/g")")
+    DESCRIPS+=("$("${BIN[grep]}" -B5 "set ${OPTION}" "${CFG_FILE}" | \
+                  "${BIN[grep]}" -v '^#bind' | "${BIN[grep]}" -v '^\s*#*\s*set ' | \
+                  "${BIN[grep]}" -v -- '--' | "${BIN[sed]}" ':a;N;$!ba;s/.*\n\n//g' | \
+                  "${BIN[sed]}" 's/^## //g' | "${BIN[paste]}" -d\  -s | \
+                  "${BIN[sed]}" "s/'/'\\\''/g")")
     "${BIN[grep]}" -q "^\s*#\s*set ${OPTION}" "${CFG_FILE}" && SELSTATE+=(off) || SELSTATE+=(on)
-  done <<< "$("${BIN[grep]}" 'set ' "${CFG_FILE}" | "${BIN[grep]}" -v '[.,:;\"0-9]\|color' | "${BIN[sed]}" 's/^\s*\#*\s*set //g' | "${BIN[sort]}" -u)"
+  done
 
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
     "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
@@ -583,9 +886,8 @@ function CONFIGURE_NTP {
   local IPAWMASK IADDRESS NET_MASK NTPSRVRS REGION RSTRICTS SRVRSPEC
 
   LBL_STRS=('NTP Servers' 'Net Mask To Serve')
-
-  DEFAULTS+=( "$("${BIN[grep]}" '^server' "${CFG_FILE}" | "${BIN[cut]}" -d\  -f2 | "${BIN[tr]}" '\n' ' ' | "${BIN[sed]}" 's/ $//g')" )
-  DEFAULTS+=( "$("${BIN[grep]}" '^restrict.*mask' "${CFG_FILE}" | "${BIN[cut]}" -d\  -f2-4 | "${BIN[tr]}" '\n' ' ' | "${BIN[sed]}" 's/ &//g;s| mask |/|g')" )
+  DEFAULTS+=( "$("${BIN[grep]}" '^server' "${CFG_FILE}" | "${BIN[cut]}" -d\  -f2 | "${BIN[paste]}" -d\  -s)" )
+  DEFAULTS+=( "$("${BIN[grep]}" '^restrict.*mask' "${CFG_FILE}" | "${BIN[cut]}" -d\  -f2-4 | "${BIN[paste]}" -d\  -s | "${BIN[sed]}" 's| mask |/|g')" )
 
   if [[ -z ${DEFAULTS[0]} ]]; then
     DEFAULTS[0]='0.arch.pool.ntp.org 1.arch.pool.ntp.org 2.arch.pool.ntp.org 3.arch.pool.ntp.org'
@@ -839,7 +1141,7 @@ function CONFIGURE_SMARTD_DEVICESCAN {
   local HELP_MSG="Choose device scan settings:"
   #######################################################################
   local -a SUGGESTS DESCRIPS SELSTATE
-  local SELECTED PREV_CFG="$("${BIN[grep]}" "^${CFG_ITEM}" "${CFG_FILE}")"
+  local SELECTED PREV_CFG="$(GET_SMARTD_DEVICESCAN)"
 
   SUGGESTS+=(a o S n s)
   DESCRIPS+=('Monitor all attributes'
@@ -852,7 +1154,6 @@ function CONFIGURE_SMARTD_DEVICESCAN {
   [[ ${PREV_CFG} =~ '-S on' ]] && SELSTATE+=(on) || SELSTATE+=(off)
   [[ ${PREV_CFG} =~ '-n standby' ]] && SELSTATE+=(on) || SELSTATE+=(off)
   [[ ${PREV_CFG} =~ '-s' ]] && SELSTATE+=(on) || SELSTATE+=(off)
-
 
   DIALOG_MULTI_SELECT "${BACK_TTL}" "${MAIN_TTL}" 'hidetags' \
     "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'
@@ -912,15 +1213,7 @@ function CONFIGURE_SUDO {
 
   GET_PRIVILEGE # Working with sudo configs requires root access
 
-  # Parse the config file into a variable (ignore commented-out and blank lines)
-  EXISTCFG="$("${BIN[sudo]}" "${BIN[grep]}" -v '^\s*#\|^$' "${CFG_FILE}")"
-
-  if [[ ${EXISTCFG} =~ @includedir ]]; then
-    # If the config file specified an @includedir, get configs from those files as well
-    INCL_DIR="$("${BIN[grep]}" 'includedir' <<< "${EXISTCFG}" | "${BIN[cut]}" -d\  -f2)"
-    EXISTCFG+=$'\n' # The trailing newline got stripped out, so add it back in
-    EXISTCFG+="$("${BIN[sudo]}" sh -c "'${BIN[grep]}' -hv '^\s*#' ${OSCHROOT}${INCL_DIR}/*" | "${BIN[grep]}" -v "^\s*$")"
-  fi
+  EXISTCFG="$(GET_SUDO_CONFIG)"
 
   SUGGESTS+=(wheel passprompt passwd_timeout rootpw timestamp_type timestamp_timeout)
   DESCRIPS+=('Enable members of the wheel group to use sudo'
@@ -1048,7 +1341,7 @@ function CONFIGURE_SYSTEMD_JOUNRAL_SIZE {
   local -r BAKTITLE="Jouurnal Size"
   local -r HELP_MSG="Max Journal Size:"
   #######################################################################
-  local SELECTED PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | ${BIN[tr]} -d 'BKMGTbi')"
+  local SELECTED PREV_CFG="$(GET_SYSTEMD_JOURNAL_SIZE | ${BIN[tr]} -d 'BKMGTbi')"
 
   [[ ${PREV_CFG} -lt 16 ]] && PREV_CFG='64'
   DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 16 4096 "${PREV_CFG}"
@@ -1061,7 +1354,6 @@ function CONFIGURE_SYSTEMD_RESOLVED {
   local -r BAKTITLE="Resolver"
   local -r HELP_MSG="Use systemd-resolved?"
   #######################################################################
-
   if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
     USE_PRIVILEGE "${BIN[ln]}" -fs '/run/systemd/resolve/resolv.conf' "${OSCHROOT}/etc/resolv.conf"
     USE_PRIVILEGE "${BIN[sed]}" -i 's/ [!UNAVAIL=return] / /g' "${OSCHROOT}/etc/nsswitch.conf"
@@ -1080,7 +1372,7 @@ function CONFIGURE_SYSTEMD_SERVICE_START_TIMEOUT {
   local -r BAKTITLE="Default Service Startup Timeout"
   local -r HELP_MSG="Timeout (in seconds):"
   #######################################################################
-  local SELECTED PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | ${BIN[tr]} -d 's')"
+  local SELECTED PREV_CFG="$(GET_SYSTEMD_SERVICE_START_TIMEOUT | "${BIN[tr]}" -d 's')"
 
   [[ -z ${PREV_CFG} ]] && PREV_CFG='30'
   DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 30 90 "${PREV_CFG}"
@@ -1095,7 +1387,7 @@ function CONFIGURE_SYSTEMD_SERVICE_STOP_TIMEOUT {
   local -r BAKTITLE="Default Service Stop Timeout"
   local -r HELP_MSG="Timeout (in seconds):"
   #######################################################################
-  local SELECTED PREV_CFG="$("${BIN[grep]}" "^\s*${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | ${BIN[tr]} -d 's')"
+  local SELECTED PREV_CFG="$(GET_SYSTEMD_SERVICE_STOP_TIMEOUT | "${BIN[tr]}" -d 's')"
 
   [[ -z ${PREV_CFG} ]] && PREV_CFG='15'
   DIALOG_RANGE "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 15 45 "${PREV_CFG}"
@@ -1135,7 +1427,7 @@ function CONFIGURE_TIMEZONE {
   ##############################################################################
   local -r BAKTITLE="Time Zone Selection"
   ##############################################################################
-  local SELECTED PREV_CFG="$("${BIN[readlink]}" "${CFG_FILE}")"
+  local SELECTED PREV_CFG="$(GET_TIMEZONE full)"
 
   [[ -z ${PREV_CFG} ]] && PREV_CFG='/usr/share/zoneinfo/'
 
@@ -1153,7 +1445,7 @@ function CONFIGURE_VCONSOLE_FONT {
   local -r HELP_MSG="Select your console font:"
   ##############################################################################
   local -a SUGGESTS SELSTATE
-  local SELECTED PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)"
+  local SELECTED PREV_CFG="$(GET_VCONSOLE_FONT)"
 
   [[ -z ${PREV_CFG} ]] && PREV_CFG='default8x16'
   IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${OSCHROOT}/usr/share/kbd/consolefonts" -name '*.psfu.gz' | "${BIN[sed]}" 's|.*/||g;s|\.psfu.gz||g' | "${BIN[sort]}")
@@ -1179,12 +1471,11 @@ function CONFIGURE_VCONSOLE_KEYMAP {
   local -r HELP_MSG="Select your keymap:"
   ##############################################################################
   local -a SUGGESTS
-  local SELECTED COUNTRY
+  local SELECTED COUNTRY="$("${BIN[grep]}" 'LANGUAGE=' "${CFG_FILE/vconsole/locale}" | "${BIN[cut]}" -d_ -f2)"
 
-  COUNTRY="$("${BIN[grep]}" 'LANGUAGE=' "${CFG_FILE/vconsole/locale}" | "${BIN[cut]}" -d_ -f2)"
   IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${OSCHROOT}/usr/share/kbd/keymaps" \( -name "${COUNTRY,,}-*" -o -name "${COUNTRY,,}_*" -o -name "${COUNTRY,,}.*" \) | "${BIN[sed]}" 's|.*/||g;s|\.map\.gz||g' | "${BIN[sort]}")
 
-  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "$(GET_VCONSOLE_KEYMAP)" \
     "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
   SELECTED="$(</tmp/selection)"
 
@@ -1236,7 +1527,6 @@ function CREATE_NEW_USERS {
     ############################################################################
     HELP_MSG="Enter username:"
     ############################################################################
-
     while true; do
       DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "" || return 1
       SELECTED=$(</tmp/selection)
@@ -1246,7 +1536,6 @@ function CREATE_NEW_USERS {
         break
       fi
     done
-
     ############################################################################
     HELP_MSG="Use private group?\n"
     HELP_MSG+="(Selecting no will make '\\''users'\\'' the primary group.)"
@@ -1367,26 +1656,15 @@ function SELECT_USER {
     [[ ${UNAME} == root ]] && [[ ${BAKTITLE} =~ Group ]] && continue
     LOGINAME+=("${UNAME}")
     USRIDNUM+=("${USRID}")
-    if [[ ${PASWD} == x ]]; then
-      PWSTR="$("${BIN[sudo]}" "${BIN[grep]}" "${UNAME}" "${OSCHROOT}/etc/shadow" | "${BIN[cut]}" -d: -f2)"
-      case "${PWSTR}" in
-                 *'!'*) USRPSWRD+=('locked out');;
-                '$1$'*) USRPSWRD+=('password-protected (MD5)');;
-        '$2'[abxy]'$'*) USRPSWRD+=('password-protected (Blowfish)');;
-                '$5$'*) USRPSWRD+=('password-protected (SHA256)');;
-                '$6$'*) USRPSWRD+=('password-protected (SHA512)');;
-                     *) USRPSWRD+=('unprotected')
-      esac
-    fi
+    [[ ${PASWD} == x ]] && USRPSWRD+=("$(GET_USERNAME_PASSWORD "${UNAME}")")
     USERPGRP+=("$("${BIN[grep]}" ":${PGIDN}:" "${OSCHROOT}/etc/group"  | "${BIN[cut]}" -d: -f1)")
-    USERGRPS+=("$("${BIN[grep]}" "${UNAME}" "${OSCHROOT}/etc/group" | "${BIN[cut]}" -d: -f1 | tr '\n' ' ' | sed 's/ $//g')")
+    USERGRPS+=("$("${BIN[grep]}" "${UNAME}" "${OSCHROOT}/etc/group" | "${BIN[cut]}" -d: -f1 | "${BIN[paste]}" -d\  -s)")
     USRLNGNM+=("${USRLN}")
     USRHMDIR+=("${HMDIR}")
     USRSHELL+=("${SHELL}")
   done < <("${BIN[grep]}" '/home\|root' "${OSCHROOT}/etc/passwd")
 
   for (( LC=0 ; LC<${#LOGINAME[@]} ; LC++ )); do
-    [[ -z ${USERGRPS[${LC}]} ]] && PGROUPS='no other groups' || PGROUPS="${USERGRPS[${LC}]// /, }"
     DESCRIPS+=("$(printf 'is %s to use %s in %s' \
       "${USRPSWRD[${LC}]}" "${USRSHELL[${LC}]}" "${USRHMDIR[${LC}]}")")
     SUGGESTS+=("${LOGINAME[${LC}]}:${USERPGRP[${LC}]}")
@@ -1397,6 +1675,17 @@ function SELECT_USER {
   RETVALUE="${?}"
   "${BIN[sed]}" -i 's/:.*//g' /tmp/selection
   return "${RETVALUE}"
+}
+
+function SET_CHROOT_DIRECTORY {
+  ##############################################################################
+  local -r BAKTITLE="OS Mount Location"
+  local -r HELP_MSG="Where is the OS root filessystem mounted?"
+  ##############################################################################
+  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt/
+  OSCHROOT="$(</tmp/selection)"
+  [[ -z ${OSCHROOT} ]] && unset OSCHROOT
+  [[ ${OSCHROOT} == '/'  ]] && unset OSCHROOT
 }
 
 function SET_USER_GROUPS {
@@ -1504,8 +1793,244 @@ function SET_USER_SHELL {
   done
 }
 
+function REVIEW_MODE {
+  ##############################################################################
+  local -r BAKTITLE="Review Configuration"
+  local -r HELP_MSG=""
+  ##############################################################################
+  local -a MENU_TAG MENU_STR
+  local CFG_LINE HOOK_MSG OPENPRTS SHUTPRTS RSLVLINK SCR_RSLT SVC_STAT SELECTED
+
+  GET_PRIVILEGE
+
+  MENU_TAG+=(chroot)
+  MENU_STR+=("OS Root Directory: ${OSCHROOT:-[current system]}")
+
+  MENU_TAG+=(fstab)
+  MENU_STR+=("Filesystem Table: $(IS_FSTAB_SET && echo '[set]' || echo '[unset]')")
+
+  MENU_TAG+=(timezone)
+  MENU_STR+=("Time Zone: $(GET_TIMEZONE short)")
+
+  MENU_TAG+=(locales)
+  MENU_STR+=("Locales Enabled: $(GET_LOCALES)")
+
+  MENU_TAG+=(language)
+  MENU_STR+=("Primary Language: $(GET_PRIMARY_LANGUAGE)")
+
+  MENU_TAG+=(collate)
+  MENU_STR+=("Locale Collation: $(GET_LOCALE_COLLATION)")
+
+  MENU_TAG+=(message)
+  MENU_STR+=("Locale Messages: $(GET_LOCALE_MESSAGES)")
+
+  MENU_TAG+=(keymap)
+  MENU_STR+=("Console Keymap: $(GET_VCONSOLE_KEYMAP)")
+
+  MENU_TAG+=(font)
+  MENU_STR+=("Console Font: $(GET_VCONSOLE_FONT)")
+
+  MENU_TAG+=(hostname)
+  MENU_STR+=("Hostname: $(<"${OSCHROOT}/etc/hostname")")
+
+  MENU_TAG+=(domain)
+  MENU_STR+=("Local Domain: $(GET_LOCAL_DOMAIN)")
+
+  MENU_TAG+=(hosts)
+  MENU_STR+=("Hosts File: $(GET_HOSTS)")
+
+  MENU_TAG+=(nsswitch)
+  MENU_STR+=("Name Service Switch Hosts: $(GET_NSSWITCH_HOSTS)")
+
+  if [[ -e "${OSCHROOT}/etc/systemd/resolved.conf" ]]; then
+    MENU_TAG+=(sdresolv)
+    SVC_STAT="$(IS_SYSTEMD_RESOLVED_ENABLED && echo 'enabled' || echo 'disabled')"
+    MENU_STR+=("Systemd Resolved: $(GET_SYSTEMD_RESOLVED) service=${SVC_STAT}")
+  fi
+
+  MENU_TAG+=(resolv)
+  RSLVLINK="links to $(GET_RESOLV_LINK)"
+  [[ ${RSLVLINK} =~ systemd ]] || RSLVLINK='normal file'
+  MENU_STR+=("Resolv.conf: ${RSLVLINK}")
+
+  MENU_TAG+=(sshd)
+  MENU_STR+=("OpenSSH Listen Config: $(GET_SSHD_LISTEN_INFO)")
+
+  MENU_TAG+=(iptables1)
+  if [[ -e "${OSCHROOT}/etc/iptables/iptables.rules" ]]; then
+    OPENPRTS="$(GET_IPTABLES_PORTS_OPEN_GLOBALLY)"
+    SHUTPRTS="$(GET_IPTABLES_PORTS_CLOSED_GLOBALLY)"
+    if [[ -z ${SHUTPRTS} ]] && [[ -z ${OPENPRTS} ]]; then
+      CFG_LINE='file exists, no ports globally open or blocked'
+    else
+      CFG_LINE+="globaly open ports: ${OPENPRTS:-none}, "
+      CFG_LINE+="globaly closed ports: ${SHUTPRTS:-none}"
+    fi
+  else
+    CFG_LINE='no configuration file'
+  fi
+  MENU_STR+=("IPTables: ${CFG_LINE}")
+
+  if [[ -e "${OSCHROOT}/etc/mkinitcpio.conf" ]]; then
+    MENU_TAG+=(initmods)
+    MENU_STR+=("MkInitCPIO Modules: $(GET_MKINITCPIO_MODULES)")
+
+    MENU_TAG+=(inithooks)
+    MENU_STR+=("MkInitCPIO Hooks: $(GET_MKINITCPIO_HOOKS)")
+
+    MENU_TAG+=(initcomp)
+    MENU_STR+=("MkInitCPIO Compression: $(GET_MKINITCPIO_COMPRESSION)")
+  fi
+
+  if [[ -e "${OSCHROOT}/etc/pacman.conf" ]]; then
+    MENU_TAG+=(pacopts)
+    MENU_STR+=("Pacman Options: $(GET_PACMAN_OPTIONS)")
+
+    MENU_TAG+=(pacrepos)
+    MENU_STR+=("Pacman Repos: $(GET_PACMAN_REPOS)")
+
+    MENU_TAG+=(packeys)
+    MENU_STR+=("Pacman Keys: [no known way to determine keys]")
+  fi
+
+  if [[ -e "${OSCHROOT}/etc/nanorc" ]]; then
+    MENU_TAG+=(nanoopts)
+    MENU_STR+=("NanoRC Options: $(GET_NANORC_OPTIONS enabled)")
+
+    MENU_TAG+=(nanoclrs)
+    MENU_STR+=("NanoRC Colors: $(GET_NANORC_COLORS)")
+
+    MENU_TAG+=(nanoincs)
+    MENU_STR+=("NanoRC Includes: $(GET_NANORC_INCLUDES)")
+  fi
+
+  if [[ -e "${OSCHROOT}/etc/sudoers" ]]; then
+    MENU_TAG+=(sudo)
+    MENU_STR+=("Sudo Config: $(INTERPRET_SUDO_CONFIG)")
+  fi
+
+  if [[ -d "${OSCHROOT}/etc/polkit-1/rules.d" ]]; then
+    MENU_TAG+=(pkrootpw)
+    MENU_STR+=("PolicyKit Use Root Password: $(IS_POLICYKIT_ROOTPW_SET && echo 'yes' || echo 'no' )")
+  fi
+
+  MENU_TAG+=(sticky)
+  MENU_STR+=("Sticky Bit Directories Fix: $(IS_STICKYDIRS_FIXED && echo 'yes' || echo 'no')")
+
+  if [[ -e "${OSCHROOT}/etc/plymouth/plymouthd.conf" ]]; then
+    MENU_TAG+=(plymouth)
+    if [[ -e "${OSCHROOT}/etc/mkinitcpio.conf" ]]; then
+      HOOK_MSG=', plymouth hook is '
+      IS_PLYMOUTH_HOOK_PRESENT && HOOK_MSG+='present ' || HOOK_MSG+='not present '
+      HOOK_MSG+='in mkinitcpio.conf'
+    fi
+    MENU_STR+=("Plymouth: $(GET_PLYMOUTH_THEME)${HOOK_MSG}")
+  fi
+
+  if [[ -e "${OSCHROOT}/etc/smartd.conf" ]]; then
+    MENU_TAG+=(smart)
+    MENU_STR+=("SMARTd DEVICESCAN: $(GET_SMARTD_DEVICESCAN)")
+  fi
+
+  if [[ -e "${OSCHROOT}/etc/ntp.conf" ]]; then
+    MENU_TAG+=(ntp)
+    MENU_STR+=("NTP Daemon: ")
+  elif [[ -e "${OSCHROOT}/etc/systemd/timesyncd.conf" ]]; then
+    MENU_TAG+=(sdtime)
+    MENU_STR+=("Systemd Timesyncd: $(GET_SYSTEMD_TIMESYNCD_SERVERS)")
+  fi
+
+  if [[ -e "${OSCHROOT}/etc/systemd/system.conf" ]]; then
+    MENU_TAG+=(sdldhls)
+    MENU_STR+=("Systemd Logind HandleLidSwitch: $(GET_SYSTEMD_LOGIND_HANDLELIDSWITCH)")
+
+    MENU_TAG+=(sdjrnlsz)
+    MENU_STR+=("Systemd Journal Size: $(GET_SYSTEMD_JOURNAL_SIZE)")
+
+    MENU_TAG+=(sdstrtto)
+    MENU_STR+=("Systemd Service Start Timeout: $(GET_SYSTEMD_SERVICE_START_TIMEOUT)")
+
+    MENU_TAG+=(sdstopto)
+    MENU_STR+=("Systemd Service Stop Timeout: $(GET_SYSTEMD_SERVICE_STOP_TIMEOUT)")
+
+    MENU_TAG+=(sdsrvcs)
+    MENU_STR+=("Systemd Services: [select to manage]")
+  fi
+
+  MENU_TAG+=(editor)
+  MENU_STR+=("Default editor: $(GET_DEFAULT_EDITOR)")
+
+  MENU_TAG+=(vdoaccel)
+  SCR_RSLT="script present, sets $(GET_VIDEO_ACCELERATION_SCRIPT_RESULTS)"
+  [[ ${SCR_RSLT} =~ DRIVER ]] || SCR_RSLT="script not present"
+  SCR_RSLT="${SCR_RSLT/ VDPAU/ and VDPAU}"
+  MENU_STR+=("Video Acceleration: ${SCR_RSLT}")
+
+  MENU_TAG+=(users)
+  MENU_STR+=("Users: $(GET_USERNAMES)")
+
+  MENU_TAG+=(passwds)
+  MENU_STR+=("Passwords: $(GET_USERNAME_PASSWORD)")
+
+  MENU_TAG+=(shells)
+  MENU_STR+=("Shells: $(GET_USERNAME_SHELL)")
+
+  MENU_TAG+=(groups)
+  MENU_STR+=("Groups: $(GET_USERNAME_GROUP_MEMBERSHIP_COUNT)")
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "Configuration Review" 'hidetags' '' \
+    "${HELP_MSG}" 'MENU_TAG' 'MENU_STR' || return 1
+  SELECTED="$(</tmp/selection)"
+
+  case "${SELECTED}" in
+       chroot) SET_CHROOT_DIRECTORY;;
+        fstab) CONFIGURE_FSTAB;;
+     timezone) CONFIGURE_TIMEZONE;;
+      locales) CONFIGURE_LOCALE_AVAILABILITY;;
+     language) CONFIGURE_LOCALE_LANGUAGE;;
+      collate) CONFIGURE_LOCALE_COLLATION;;
+      message) CONFIGURE_LOCALE_MESSAGES;;
+       keymap) CONFIGURE_VCONSOLE_KEYMAP;;
+         font) CONFIGURE_VCONSOLE_FONT;;
+     hostname) CONFIGURE_HOSTNAME;;
+       domain) CONFIGURE_LOCAL_DOMAIN;;
+        hosts) CONFIGURE_HOSTS;;
+     nsswitch) true;;
+     sdresolv) CONFIGURE_SYSTEMD_RESOLVED;;
+       resolv) true;;
+         sshd) true;;
+     initmods) CONFIGURE_MKINITCPIO_MODULES;;
+    inithooks) CONFIGURE_MKINITCPIO_HOOKS;;
+     initcomp) CONFIGURE_MKINITCPIO_COMPRESSION;;
+      pacopts) CONFIGURE_PACMAN_OPTIONS;;
+     pacrepos) CONFIGURE_PACMAN_REPOS;;
+      packeys) CONFIGURE_PACMAN_KEYS;;
+     nanoopts) CONFIGURE_NANORC_OPTIONS;;
+     nanoclrs) CONFIGURE_NANORC_COLORS;;
+     nanoincs) true;;
+         sudo) CONFIGURE_SUDO;;
+     pkrootpw) CONFIGURE_POLICYKIT_ROOTPW;;
+       sticky) CONFIGURE_STICKY_BIT;;
+          ntp) CONFIGURE_NTP;;
+       sdtime) CONFIGURE_SYSTEMD_TIMESYNCD;;
+     plymouth) CONFIGURE_PLYMOUTH;;
+        smart) CONFIGURE_SMARTD_DEVICESCAN;;
+      sdldhls) CONFIGURE_SYSTEMD_LOGIND_HANDLELIDSWITCH;;
+     sdjrnlsz) CONFIGURE_SYSTEMD_JOUNRAL_SIZE;;
+     sdstrtto) CONFIGURE_SYSTEMD_SERVICE_START_TIMEOUT;;
+     sdstopto) CONFIGURE_SYSTEMD_SERVICE_STOP_TIMEOUT;;
+       editor) CONFIGURE_DEFAULT_EDITOR;;
+     vdoaccel) CONFIGURE_VIDEO_ACCELERATION;;
+        users) CREATE_NEW_USERS;;
+      passwds) SET_USER_PASSWORD;;
+       groups) SET_USER_GROUPS;;
+       shells) SET_USER_SHELLS;;
+      sdsrvcs) ENABLE_SYSTEMD_SERVICES;;
+  esac
+}
+
 function WIZARD_MODE {
-  CHROOT_DIRECTORY
+  SET_CHROOT_DIRECTORY
   CONFIGURE_FSTAB
   CONFIGURE_TIMEZONE
   CONFIGURE_LOCALE_AVAILABILITY
@@ -1546,13 +2071,12 @@ function WIZARD_MODE {
 }
 
 while true; do
-  WIZARD_MODE
-  exit 0
-  REVIEW_MODE
+  #WIZARD_MODE
+  #exit 0
+  REVIEW_MODE || exit 0
 done
 
-echo "FINALIZING SETUP"
-
-"${BIN[arch-chroot]}" "${OSCHROOT}" 'mkinitcpio -P'
+#echo "FINALIZING SETUP"
+#"${BIN[arch-chroot]}" "${OSCHROOT}" 'mkinitcpio -P'
 
 exit 0
