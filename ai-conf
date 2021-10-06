@@ -126,8 +126,8 @@ function CONFIGURE_DEFAULT_EDITOR {
     fi
   done
 
-  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
-    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS'
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${PREV_CFG}" \
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' || return 1
   SELECTED="$(</tmp/selection)"
 
   USE_PRIVILEGE sh -c "echo 'export EDITOR=${SELECTED}' > '${CFG_FILE}'"
@@ -333,7 +333,7 @@ function CONFIGURE_LOCAL_DOMAIN {
   ##############################################################################
   local SELECTED PREV_CFG="$("${BIN[grep]}" "${CFG_ITEM}=" "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)"
 
-  DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "${PREV_CFG}"
+  DIALOG_INPUT "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" "${PREV_CFG}" || return 1
   SELECTED=$(</tmp/selection)
   USE_PRIVILEGE "${BIN[sed]}" -i "s/.*${CFG_ITEM}=.*/${CFG_ITEM}=${SELECTED}/g" "${CFG_FILE}"
 }
@@ -353,7 +353,7 @@ function CONFIGURE_LOCALE_AVAILABILITY {
   done <<< "$("${BIN[grep]}" '\.UTF-8 UTF-8' "${CFG_FILE}" | "${BIN[sed]}" 's/^\s*#*\s*\([a-z]\{2,3\}\)_.*\.UTF-8 UTF-8.*/\1/g;' | ${BIN[sort]} -u )"
 
   DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' \
-    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE'
+    "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' 'SELSTATE' || return 1
   SELECTED="$(</tmp/selection)"
   SELECTED="${SELECTED# }"
   SELECTED="${SELECTED% }"
