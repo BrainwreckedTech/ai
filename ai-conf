@@ -841,7 +841,6 @@ function CONFIGURE_NANORC_COLORS {
 }
 
 function CONFIGURE_NANORC_INCLUDES {
-  set -x
   local -r CFG_FILE="${OSCHROOT}/etc/nanorc"
   local CFG_ITEM='/usr/share/nano/\*.nanorc'
   ##############################################################################
@@ -876,7 +875,6 @@ function CONFIGURE_NANORC_INCLUDES {
 
   [[ -n ${REPLACES} ]] && \
     USE_PRIVILEGE "${BIN[sed]}" -i ":a;N;\$!ba;s|\#*[ \t]*include\s*\".*\*\.nanorc\"|${REPLACES}|g" "${CFG_FILE}"
-  set +x
 }
 
 function CONFIGURE_NANORC_OPTIONS {
