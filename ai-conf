@@ -840,6 +840,45 @@ function CONFIGURE_NANORC_COLORS {
   fi
 }
 
+function CONFIGURE_NANORC_INCLUDES {
+  set -x
+  local -r CFG_FILE="${OSCHROOT}/etc/nanorc"
+  local CFG_ITEM='/usr/share/nano/\*.nanorc'
+  ##############################################################################
+  local -r BAKTITLE="NanoRC Options"
+  local HELP_MSG="Include ${CFG_ITEM/\\/}?"
+  ##############################################################################
+  local REPLACES
+
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    REPLACES="include \"${CFG_ITEM}\""
+  else
+    [[ ${?} -eq 255 ]] && return 1
+    REPLACES="# include \"${CFG_ITEM}\""
+  fi
+
+  CFG_ITEM='/usr/share/nano-syntax-highlighting/\*.nanorc'
+
+  if [[ -d "${CFG_ITEM%\/*}" ]]; then
+    ############################################################################
+    local HELP_MSG="Include ${CFG_ITEM/\\/}?"
+    ############################################################################
+    if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+      [[ -n ${REPLACES} ]] && REPLACES+="\n"
+      REPLACES+="include \"${CFG_ITEM}\""
+    else
+      [[ ${?} -eq 255 ]] && return 1
+    fi
+    if "${BIN[grep]}" -q '^\s*icolor\s*brightnormal' "${CFG_ITEM/\\\*/nanorc}"; then
+      USE_PRIVILEGE "${BIN[sed]}" -i 's/\(.*brightnormal.*\)/# \1/g' "${CFG_ITEM/\\\*/nanorc}"
+    fi
+  fi
+
+  [[ -n ${REPLACES} ]] && \
+    USE_PRIVILEGE "${BIN[sed]}" -i ":a;N;\$!ba;s|\#*[ \t]*include\s*\".*\*\.nanorc\"|${REPLACES}|g" "${CFG_FILE}"
+  set +x
+}
+
 function CONFIGURE_NANORC_OPTIONS {
   local -r CFG_FILE="${OSCHROOT}/etc/nanorc"
   ##############################################################################
@@ -2020,7 +2059,7 @@ function REVIEW_MODE {
       packeys) CONFIGURE_PACMAN_KEYS;;
      nanoopts) CONFIGURE_NANORC_OPTIONS;;
      nanoclrs) CONFIGURE_NANORC_COLORS;;
-     nanoincs) true;;
+     nanoincs) CONFIGURE_NANORC_INCLUDES;;
          sudo) CONFIGURE_SUDO;;
      pkrootpw) CONFIGURE_POLICYKIT_ROOTPW;;
        sticky) CONFIGURE_STICKY_BIT;;
@@ -2066,6 +2105,7 @@ function WIZARD_MODE {
   CONFIGURE_PACMAN_KEYS && \
   CONFIGURE_NANORC_OPTIONS && \
   CONFIGURE_NANORC_COLORS && \
+  CONFIGURE_NANORC_INCLUDES && \
   CONFIGURE_SUDO && \
   CONFIGURE_POLICYKIT_ROOTPW && \
   CONFIGURE_STICKY_BIT && \

@@ -58,7 +58,7 @@ Does as much work as possible without chrooting in.
 STATUS: Work in progress -- 3 bits of functionality left to implement:
 
 - [ ] Configure IPTables
-- [ ] Configure NanoRC Includes
+- [x] Configure NanoRC Includes
 - [ ] Configure SSHd
 
 The overview menu will show the configuration status of these, but
