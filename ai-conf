@@ -1629,13 +1629,13 @@ function GENERATE_LOCALES {
        "") continue;;
     esac
     if [[ -n "${LOCALE}" ]] && [[ -n "${CHARSET}" ]]; then
-      OUTPUT1="$(echo "${LOCALE}" | sed 's/\([^.\@]*\).*/\1/')"
-      OUTPUT2="$(echo "${LOCALE}" | sed 's/\([^\@]*\)\(\@.*\)*/\2/')"
+      OUTPUT1="$(echo "${LOCALE}" | "${BIN[sed]}" 's/\([^.\@]*\).*/\1/')"
+      OUTPUT2="$(echo "${LOCALE}" | "${BIN[sed]}" 's/\([^\@]*\)\(\@.*\)*/\2/')"
       "${BIN[printf]}" '%s.%s%s...' "${OUTPUT1}" "${CHARSET}" "${OUTPUT2}"
       if [[ -f ${LOCALES}/${LOCALE} ]]; then
         INPUT="${LOCALE}"
       else
-        INPUT="$(echo ${LOCALE} | sed 's/\([^.]*\)[^@]*\(.*\)/\1\2/')"
+        INPUT="$(echo ${LOCALE} | "${BIN[sed]}" 's/\([^.]*\)[^@]*\(.*\)/\1\2/')"
       fi
       USE_PRIVILEGE "${BIN[localedef]}" -i "${INPUT}" -c -f "${CHARSET}" -A "${OSCHROOT}/usr/share/locale/locale.alias" "${LOCALE}"
       echo ' done'
