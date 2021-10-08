@@ -55,11 +55,12 @@ TODO: Support is planned for other Linux distributions that can use the
 Configures the new system.
 Does as much work as possible without chrooting in.
 
-STATUS: Work in progress -- 3 bits of functionality left to implement:
+STATUS: Work in progress -- 4 bits of functionality left to implement:
 
-- [ ] Configure IPTables
+- [x] Configure IPTables
 - [x] Configure NanoRC Includes
 - [ ] Configure SSHd
+- [ ] Configure Fail2Ban SSH
 
 The overview menu will show the configuration status of these, but
 there's no function yet to actually change the configuration.

@@ -8,6 +8,46 @@ source ai-funcs
 declare -r TITLEBAR="AI CONFIGURATION"
 declare OSCHROOT
 
+declare -ra PORTLIST=(
+       21_ftp
+       22_ssh
+       23_telnet
+       25_smtp
+       53_dns
+       69_tftp
+       70_gopher
+       80_http
+       88_kerberos5
+      110_pop3
+      123_ntp
+  137:139_netbios
+      143_imap
+  161:162_snmp
+      194_irc
+      389_ldap
+      443_https
+      445_smb
+      465_smtps
+      587_starttls
+      636_ldaps
+      749_kerberos-adm
+      750_kerberos4
+      873_rsync
+      992_telnets
+      993_imaps
+      994_ircs
+      995_pop3s
+     1900_upnp
+     2049_nfsd
+     3478_stun
+     8200_dlna-webgui
+     8384_syncthing-webgui
+    20048_nfs-acl
+    21027_syncthing-discovery
+    22000_syncthing-listen
+    64738_murmur
+  )
+
 ################################################################################
 # Overly-cautious verification of required binaries
 ################################################################################
@@ -537,6 +577,197 @@ function CONFIGURE_HOSTS {
     USE_PRIVILEGE sh -c "'${BIN[printf]}' '%s\t%s\t%s\n' '${SELECTED}' '${LOCAL_HN}.${LOCAL_DN}' '${LOCAL_HN}' >> '${CFG_FILE}'"
   fi
 }
+
+function CONFIGURE_IPTABLES {
+  local -r CFG_FILE="${OSCHROOT}/etc/iptables/iptables.rules"
+  ##############################################################################
+  local -r BAKTITLE='IPTables Configuration'
+  ##############################################################################
+  local -a DENYPRTS DENYDSCS DENYSELS ALOWPRTS ALOWDSCS ALOWSELS CMBNPRTS
+  local -a XTRAPRTS
+  local RAWSECTN FLTR_INT STATEFUL OBHOSTAD GLBLDROP GLBLACPT REMAINDR NEWIPTBL
+  local GHGITIPR HELP_MSG PORTNMBR ALOWSLCT DENYSLCT EXISTING SYSSSHPN GH_RULES
+  local ALOWSLCT DENYSLCT EXTRA_PN FTPROUTE FTPSTATE KNOWN_PN PRTDSCRP LC
+
+  RAWSECTN="$("${BIN[grep]}" -Pzo '(?s)\*raw.*?COMMIT\n' "${CFG_FILE}" | "${BIN[tr]}" -d "$'\0'")"
+  FLTR_INT="$("${BIN[grep]}" -Pzo '(?s)\*filter(\n:[0-9A-Z :\[\]-]*)*\n' "${CFG_FILE}" | "${BIN[tr]}" -d "$'\0'")"
+  STATEFUL="$("${BIN[grep]}" -Pzo '(?s)(#.[^\n]*\s*)?-A[^\n]*INPUT[^\n]*?\n' "${CFG_FILE}" | "${BIN[tr]}" -d "$'\0'")"
+  OBHOSTAD="$("${BIN[grep]}" -Pzo '(?s)(#.[^\n]*\s*)?-A\s*OUTPUT[^\n]*? -d [^\n]*?\n' "${CFG_FILE}" | "${BIN[tr]}" -d "$'\0'")"
+  GLBLDROP="$("${BIN[grep]}" -Pzo '(?s)(#.[^\n]*\s*)?-A\s*OUTPUT[^\n]*?DROP[^\n]*?\n' "${CFG_FILE}" | "${BIN[tr]}" -d "$'\0'")"
+  GLBLACPT="$("${BIN[grep]}" -v '^-A\s*\(TCP\|UDP\|OUTPUT\).*\s-[ds]\s' "${CFG_FILE}" | \
+              "${BIN[grep]}" -Pzo '(?s)(\n#[^\n]+)*(\n-A\s*?(TC|UD)P[^\n]*)+\n' | "${BIN[tr]}" -d "$'\0'")"
+  REMAINDR="$("${BIN[grep]}" -Pzo '(?s)(\n#.[^\n]*\s*)*?\n*#*\s*-A\s*(TC|UD)P[^\n]*? -[ds] [^\n]*?\n' "${CFG_FILE}" | "${BIN[tr]}" -d "$'\0'")"
+
+  # Parse Gloabl Drops and Allows for unknown ports.
+
+  SYSSSHPN="$(GET_SSHD_LISTEN_INFO | "${BIN[sed]}" 's/.*Port\s*//g')"
+
+  EXISTING="$("${BIN[grep]}" -v '^\s*$\|^\s*#' <<< "${GLBLDROP}" | "${BIN[sed]}" 's/.*--dport\s*\([0-9]\+\).*/\1/g' | "${BIN[tr]}" '\n' ' ')"
+  EXISTING+="$("${BIN[grep]}" -v '^\s*$\|^\s*#' <<< "${GLBLACPT}" | "${BIN[sed]}" 's/.*--dport\s*\([0-9]\+\).*/\1/g' | "${BIN[tr]}" '\n' ' ')"
+  EXISTING+="${SYSSSHPN}"
+  EXISTING="$("${BIN[tr]}" ' ' '\n' <<< "${EXISTING}" | "${BIN[sort]}" -nu | "${BIN[tr]}" '\n' ' ')"
+
+  for PORTNMBR in ${EXISTING}; do
+    [[ ${PORTLIST[*]} =~ ${PORTNMBR} ]] && continue
+    PRTDSCRP=$("${BIN[grep]}" "${PORTNMBR}.*--comment" <<< "${GLBLDROP}${GLBLACPT}" | "${BIN[sed]}" 's/.*comment\s*//g;s/"//g')
+    [[ -z ${PRTDSCRP} ]] && PRTDSCRP='unknown'
+    [[ ${PORTNMBR} -eq ${SYSSSHPN} ]] && PRTDSCRP='system-ssh'
+    XTRAPRTS+=("${PORTNMBR}_${PRTDSCRP}")
+  done
+
+  # Combine the known port list with the unknown
+  # ports found in the existing iptables.rules
+
+  LC=0; EXTRA_PN="${XTRAPRTS[${LC}]%_*}"
+  for PORTINFO in "${PORTLIST[@]}"; do
+    KNOWN_PN="${PORTINFO%_*}"
+    if [[ ${LC} -ge ${#XTRAPRTS[@]} ]] || [[ ${KNOWN_PN%:*} -lt ${EXTRA_PN%:*} ]]; then
+      CMBNPRTS+=("${PORTINFO}")
+    else
+      while [[ ${EXTRA_PN%:*} -lt ${KNOWN_PN%:*} ]] && [[ ${LC} -lt ${#XTRAPRTS[@]} ]]; do
+        CMBNPRTS+=("${XTRAPRTS[${LC}]}")
+        ((LC++))
+        EXTRA_PN="${XTRAPRTS[${LC}]%_*}"
+      done
+    fi
+  done
+
+  # In order to enable FTP, two things need to exist.  So test if those two
+  # things exist before saying the user already has FTP enabled.
+
+  { "${BIN[grep]}" -- '^\s&-A\s*PREROUTING' <<< "${RAWSECTN}" | \
+    "${BIN[grep]}" -- '\s*-p\s*tcp\s*' | "${BIN[grep]}" -- '\s*--dport\s*21\s*' | \
+    "${BIN[grep]}" -- '\s*-j\s*CT\s*' | "${BIN[grep]}" -- '\s*--helper\s*'; } \
+    && FTPROUTE=true || FTPROUTE=false
+
+  { "${BIN[grep]}" -- '^\s&-A\s*INPUT' <<< "${STATEFUL}" | \
+    "${BIN[grep]}" -- '\s*-p\s*tcp\s*' | "${BIN[grep]}" -- '\s*--dport\s*21\s*' | \
+    "${BIN[grep]}" -- '\s*-j\s*ACCEPT\s*' | "${BIN[grep]}" -- '\s*-m\s*tcp\s*'; } \
+    && FTPSTATE=true || FTPSTATE=false
+
+  ##############################################################################
+  HELP_MSG='Choose which ports to close universally\n'
+  HELP_MSG+='(no source/destination restrictions):'
+  ##############################################################################
+  for PORTINFO in "${CMBNPRTS[@]}"; do
+    DENYPRTS+=("${PORTINFO%_*}")
+    DENYDSCS+=("${PORTINFO#*_}")
+    [[ ${GLBLDROP} =~ --dport[[:blank:]]+${DENYPRTS[-1]}[[:blank:]]+ ]] \
+      && DENYSELS+=(on) || DENYSELS+=(off)
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'DENYPRTS' 'DENYDSCS' 'DENYSELS' || return 1
+  DENYSLCT="$(</tmp/selection)"
+
+  ##############################################################################
+  HELP_MSG='Choose which ports to open universally\n'
+  HELP_MSG+='(no source/destination restrictions):'
+  ##############################################################################
+  for PORTINFO in "${CMBNPRTS[@]}"; do
+    [[ ${DENYSLCT} =~ ${PORTINFO%_*} ]] && continue
+    ALOWPRTS+=("${PORTINFO%_*}")
+    ALOWDSCS+=("${PORTINFO#*_}")
+    if [[ ${ALOWPRTS[-1]} -eq 21 ]]; then
+      { ${FTPROUTE} && ${FTPSTATE}; } && ALOWSELS+=(on) || ALOWSELS+=(off)
+    else
+      [[ ${GLBLACPT} =~ --dport[[:blank:]]+${ALOWPRTS[-1]}[[:blank:]]+ ]] \
+        && ALOWSELS+=(on) || ALOWSELS+=(off)
+    fi
+  done
+
+  if [[ ${#ALOWPRTS[@]} -gt 0 ]]; then
+    DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+      "${HELP_MSG}" 'ALOWPRTS' 'ALOWDSCS' 'ALOWSELS' || return 1
+    ALOWSLCT="$(</tmp/selection)"
+  fi
+
+  ##############################################################################
+  HELP_MSG='Allow communication with GitHub git IP addresses?\n'
+  MELP_MSG+='(Used when using SSH access to GitHub git repositories.)'
+  ##############################################################################
+
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    LC=0
+    while read -r GHGITIPR; do
+      ((LC++))
+      GH_RULES+="-A OUTPUT -d ${GHGITIPR} -p tcp -m tcp --dport 22 -j ACCEPT -m comment --comment \"GitHub IP range ${LC}\""$'\n'
+    done < <("${BIN[curl]}" -s https://api.github.com/meta | "${BIN[sed]}" ':a;N;$!ba;s/.*git[^\n]\+\[//g;s/].*//g;s/\s\s\+//g;s/"//g;s/,/\n/g' | "${BIN[grep]}" -v ':')
+  fi
+
+  if [[ ${ALOWSLCT} =~ [[:blank:]]21[[:blank:]] ]]; then
+    NEWIPTBL+='*raw'$'\n'
+    NEWIPTBL+=':PREROUTING ACCEPT [0.0]'$'\n'
+    NEWIPTBL+='-A PREROUTING -p tcp --dport 21 -j CT --helper ftp'$'\n'
+    NEWIPTBL+='COMMIT'$'\n\n'
+  fi
+
+  NEWIPTBL+='*filter'$'\n'
+  NEWIPTBL+=':INPUT DROP [0:0]'$'\n'
+  NEWIPTBL+=':FORWARD DROP [0:0]'$'\n'
+  NEWIPTBL+=':OUTPUT ACCEPT [0:0]'$'\n'
+  NEWIPTBL+=':TCP - [0:0]'$'\n'
+  NEWIPTBL+=':UDP - [0:0]'$'\n\n'
+
+  NEWIPTBL+='# Allow traffic that belongs to established connections or new valid related traffic'$'\n'
+  NEWIPTBL+='-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT'$'\n'
+  if [[ ${ALOWSLCT} =~ [[:blank:]]21[[:blank:]] ]]; then
+    NEWIPTBL+='# Accept FTP connections'$'\n'
+    NEWIPTBL+='-A INPUT -m state --state NEW -m tcp -p tcp --dport 21 -j ACCEPT'$'\n'
+  fi
+  NEWIPTBL+='# Accept all traffic from the "loopback" (lo) interface'$'\n'
+  NEWIPTBL+='-A INPUT -i lo -j ACCEPT'$'\n'
+  NEWIPTBL+='# Accept all new incoming ICMP echo (ping) requests'$'\n'
+  NEWIPTBL+='-A INPUT -p icmp -m icmp --icmp-type 8 -m conntrack --ctstate NEW -j ACCEPT'$'\n'
+  NEWIPTBL+='# Drop all traffic with an "INVALID" state match'$'\n'
+  NEWIPTBL+='-A INPUT -m conntrack --ctstate INVALID -j DROP'$'\n'
+  NEWIPTBL+='# Attach the UDP chains to the INPUT chain to handle all new incoming connections'$'\n'
+  NEWIPTBL+='-A INPUT -p udp -m conntrack --ctstate NEW -j UDP'$'\n'
+  NEWIPTBL+='# Attach the TCP chains to the INPUT chain to handle all new incoming connections'$'\n'
+  NEWIPTBL+='-A INPUT -p tcp --tcp-flags FIN,SYN,RST,ACK SYN -m conntrack --ctstate NEW -j TCP'$'\n'
+  NEWIPTBL+='# Reject UDP streams with ICMP port unreachable if port is not open'$'\n'
+  NEWIPTBL+='-A INPUT -p udp -j REJECT --reject-with icmp-port-unreachable'$'\n'
+  NEWIPTBL+='# Reject TCP connections with TCP RESET packets if port is not open'$'\n'
+  NEWIPTBL+='-A INPUT -p tcp -j REJECT --reject-with tcp-reset'$'\n'
+  NEWIPTBL+='# Reject all remaining incoming traffic with icmp protocol unreachable message'$'\n'
+  NEWIPTBL+='-A INPUT -j REJECT --reject-with icmp-proto-unreachable'$'\n\n'
+
+  [[ -n ${GH_RULES} ]] && NEWIPTBL+='####################### GITHUB GIT IP ADDRESSES #######################'$'\n\n'
+  [[ -n ${GH_RULES} ]] && NEWIPTBL+="${GH_RULES}"$'\n'
+
+  [[ -n ${DENYSLCT} ]] && NEWIPTBL+='###################### UNIVERSALLY CLOSED PORTS #######################'$'\n\n'
+
+  for PORTNMBR in ${DENYSLCT}; do
+    PRTDSCRP=$("${BIN[sed]}" "s/.* ${PORTNMBR}_\([a-z-]*\).*/\1/g" <<< "${CMBNPRTS[@]}")
+    NEWIPTBL+="-A OUTPUT -c tcp -m tcp --dport ${PORTNMBR} -j DROP -m comment --comment \"${PRTDSCRP}:tcp\""$'\n'
+    NEWIPTBL+="-A OUTPUT -c udp -m udp --dport ${PORTNMBR} -j DROP -m comment --comment \"${PRTDSCRP}:udp\""$'\n'
+  done
+
+  [[ -n ${DENYSLCT} ]] && NEWIPTBL+=$'\n'
+
+  [[ -n ${ALOWSLCT} ]] && NEWIPTBL+='###################### UNIVERSALLY OPENED PORTS #######################'$'\n\n'
+
+  for PORTNMBR in ${ALOWSLCT}; do
+    [[ ${PORTNMBR} -eq 21 ]] && continue
+    PRTDSCRP=$("${BIN[sed]}" "s/.* ${PORTNMBR}_\([a-z-]*\).*/\1/g" <<< "${CMBNPRTS[@]}")
+    NEWIPTBL+="-A TCP -p tcp -m tcp --dport ${PORTNMBR} -j ACCEPT -m comment --comment \"${PRTDSCRP}:tcp\""$'\n'
+    NEWIPTBL+="-A UDP -p udp -m udp --dport ${PORTNMBR} -j ACCEPT -m comment --comment \"${PRTDSCRP}:udp\""$'\n'
+  done
+
+  [[ -n ${ALOWSLCT} ]] && NEWIPTBL+=$'\n'
+  [[ -n ${REMAINDR} ]] && NEWIPTBL+="${REMAINDR}"
+  NEWIPTBL+='COMMIT'
+
+  if [[ -e "${CFG_FILE}" ]]; then
+    BACKUPDT="$("${BIN[date]}" +%Y-%m-%d_%H:%M:%S)"
+    USE_PRIVILEGE "${BIN[mv]}" "${CFG_FILE}" "${CFG_FILE}.${BAKUPDT}"
+  fi
+  USE_PRIVILEGE sh -c "echo '${NEWIPTBL}' > '${CFG_FILE}'"
+  if [[ -n ${BACKUPDT} ]]; then
+    DIALOG_MSGBOX "${TITLEBAR}" "Configuration Backup" "Existing configuration was saved to iptables.rules.${BACKUPDT}"
+  fi
+}
+
 
 function CONFIGURE_MKINITCPIO_COMPRESSION {
   local -r CFG_FILE="${OSCHROOT}/etc/mkinitcpio.conf"
@@ -1903,7 +2134,7 @@ function REVIEW_MODE {
   MENU_TAG+=(sshd)
   MENU_STR+=("OpenSSH Listen Config: $(GET_SSHD_LISTEN_INFO)")
 
-  MENU_TAG+=(iptables1)
+  MENU_TAG+=(iptables)
   if [[ -e "${OSCHROOT}/etc/iptables/iptables.rules" ]]; then
     OPENPRTS="$(GET_IPTABLES_PORTS_OPEN_GLOBALLY)"
     SHUTPRTS="$(GET_IPTABLES_PORTS_CLOSED_GLOBALLY)"
@@ -2049,6 +2280,7 @@ function REVIEW_MODE {
      sdresolv) CONFIGURE_SYSTEMD_RESOLVED;;
        resolv) true;;
          sshd) true;;
+     iptables) CONFIGURE_IPTABLES;;
      initmods) CONFIGURE_MKINITCPIO_MODULES;;
     inithooks) CONFIGURE_MKINITCPIO_HOOKS;;
      initcomp) CONFIGURE_MKINITCPIO_COMPRESSION;;
@@ -2095,6 +2327,7 @@ function WIZARD_MODE {
   CONFIGURE_HOSTNAME && \
   CONFIGURE_LOCAL_DOMAIN && \
   CONFIGURE_HOSTS && \
+  CONFIGURE_IPTABLES && \
   CONFIGURE_MKINITCPIO_MODULES && \
   CONFIGURE_MKINITCPIO_HOOKS && \
   CONFIGURE_MKINITCPIO_COMPRESSION && \
