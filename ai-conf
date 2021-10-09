@@ -166,7 +166,7 @@ function GET_RESOLV_LINK {
 }
 
 function GET_HOSTS {
-  "${BIN[grep]}" -v '^\s*#\|^\s*$' /etc/hosts | \
+  "${BIN[grep]}" -v '^\s*#\|^\s*$' "${OSCHROOT}/etc/hosts" | \
     "${BIN[sed]}" 's/\s\+[0-9a-z-]*\.[0-9a-z-]*\.[0-9a-z-]*/ /g;s/\s\+$//g;s/\s\+/ = /g' | \
     "${BIN[tr]}" '\n' ',' | "${BIN[sed]}" 's/,$//g;s/,/, /g'
 }
@@ -195,8 +195,8 @@ function GET_LOCAL_DOMAIN {
 }
 
 function GET_LOCALES {
-  [[ -n ${1} ]] && LOCALES="$("${BIN[grep]}" "^\#*\(${1// /\\|}\).*\.UTF-8 UTF-8" /etc/locale.gen)"
-  [[ -z ${1} ]] && LOCALES="$("${BIN[grep]}" "^[a-z].*\.UTF-8 UTF-8" /etc/locale.gen)"
+  [[ -n ${1} ]] && LOCALES="$("${BIN[grep]}" "^\#*\(${1// /\\|}\).*\.UTF-8 UTF-8" "${OSCHROOT}/etc/locale.gen")"
+  [[ -z ${1} ]] && LOCALES="$("${BIN[grep]}" "^[a-z].*\.UTF-8 UTF-8" "${OSCHROOT}/etc/locale.gen")"
   "${BIN[sed]}" 's/\.UTF-8 UTF-8.*//g;' <<< "${LOCALES}" | "${BIN[paste]}" -d\  -s
 }
 
@@ -263,7 +263,7 @@ function GET_PACMAN_REPOS {
 }
 
 function GET_PACMAN_OPTIONS {
-  "${BIN[grep]}" '^[A-Z]' /etc/pacman.conf | \
+  "${BIN[grep]}" '^[A-Z]' "${OSCHROOT}/etc/pacman.conf" | \
   "${BIN[grep]}" -v 'Architecture\|Dir\|Hold\|Ignore\|Server\|Include\|SigLevel' | \
   "${BIN[tr]}" -d ' ' | "${BIN[paste]}" -d\  -s
 }
