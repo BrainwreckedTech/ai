@@ -838,7 +838,6 @@ function CONFIGURE_IPTABLES {
   fi
 }
 
-
 function CONFIGURE_MKINITCPIO_COMPRESSION {
   local -r CFG_FILE="${OSCHROOT}/etc/mkinitcpio.conf"
   [[ -e "${CFG_FILE}" ]] || return 0
