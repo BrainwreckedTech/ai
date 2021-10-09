@@ -158,7 +158,9 @@ function FIND_EDITOR {
 
 function GET_DEFAULT_EDITOR {
   # NOTE: This concerns the EDITOR environment variable in the chroot.
-  "${BIN[grep]}" -hRs 'export\s*EDITOR=' "${OSCHROOT}/etc/profile.d" | "${BIN[cut]}" -d= -f2
+  RETVALUE="$("${BIN[grep]}" -hRs 'export\s*EDITOR=' "${OSCHROOT}/etc/profile.d" | \
+    "${BIN[cut]}" -d= -f2)"
+  [[ -n ${RETVALUE} ]] && echo "${RETVALUE}" || echo '[not set]'
 }
 
 function GET_RESOLV_LINK {
@@ -166,9 +168,11 @@ function GET_RESOLV_LINK {
 }
 
 function GET_HOSTS {
-  "${BIN[grep]}" -v '^\s*#\|^\s*$' "${OSCHROOT}/etc/hosts" | \
+  local RETVALUE
+  RETVALUE="$("${BIN[grep]}" -v '^\s*#\|^\s*$' "${OSCHROOT}/etc/hosts" | \
     "${BIN[sed]}" 's/\s\+[0-9a-z-]*\.[0-9a-z-]*\.[0-9a-z-]*/ /g;s/\s\+$//g;s/\s\+/ = /g' | \
-    "${BIN[tr]}" '\n' ',' | "${BIN[sed]}" 's/,$//g;s/,/, /g'
+    "${BIN[tr]}" '\n' ',' | "${BIN[sed]}" 's/,$//g;s/,/, /g')"
+  [[ -n ${RETVALUE} ]] && echo "${RETVALUE}" || echo '[not set]'
 }
 
 function GET_IPTABLES_PORTS_CLOSED_GLOBALLY {
@@ -195,17 +199,29 @@ function GET_LOCAL_DOMAIN {
 }
 
 function GET_LOCALES {
-  [[ -n ${1} ]] && LOCALES="$("${BIN[grep]}" "^\#*\(${1// /\\|}\).*\.UTF-8 UTF-8" "${OSCHROOT}/etc/locale.gen")"
-  [[ -z ${1} ]] && LOCALES="$("${BIN[grep]}" "^[a-z].*\.UTF-8 UTF-8" "${OSCHROOT}/etc/locale.gen")"
-  "${BIN[sed]}" 's/\.UTF-8 UTF-8.*//g;' <<< "${LOCALES}" | "${BIN[paste]}" -d\  -s
+  [[ -n ${1} ]] && LOCALES="$("${BIN[grep]}" -s "^\#*\(${1// /\\|}\).*\.UTF-8 UTF-8" "${OSCHROOT}/etc/locale.gen")"
+  [[ -z ${1} ]] && LOCALES="$("${BIN[grep]}" -s "^[a-z].*\.UTF-8 UTF-8" "${OSCHROOT}/etc/locale.gen")"
+  if [[ -z ${1} ]] && [[ -z ${LOCALES} ]]; then
+    echo '[none selected]'
+  else
+    "${BIN[sed]}" 's/\.UTF-8 UTF-8.*//g;' <<< "${LOCALES}" | "${BIN[paste]}" -d\  -s
+  fi
 }
 
 function GET_LOCALE_COLLATION {
-  "${BIN[grep]}" LC_COLLATE "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d= -f2
+  if [[ -e "${OSCHROOT}/etc/locale.conf" ]]; then
+    "${BIN[grep]}" -s LC_COLLATE "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d= -f2
+  else
+    echo '[no config]'
+  fi
 }
 
 function GET_LOCALE_MESSAGES {
-  "${BIN[grep]}" LC_MESSAGES "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d= -f2
+  if [[ -e "${OSCHROOT}/etc/locale.conf" ]]; then
+    "${BIN[grep]}" -s LC_MESSAGES "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d= -f2
+  else
+    echo '[no config]'
+  fi
 }
 
 function GET_MKINITCPIO_COMPRESSION {
@@ -219,7 +235,10 @@ function GET_MKINITCPIO_HOOKS {
 }
 
 function GET_MKINITCPIO_MODULES {
-  "${BIN[grep]}" '^\s*MODULES=' "${OSCHROOT}/etc/mkinitcpio.conf" | "${BIN[sed]}" 's/.*(\(.*\)).*/\1/g'
+  local RETVALUE
+  RETVALUE="$("${BIN[grep]}" '^\s*MODULES=' "${OSCHROOT}/etc/mkinitcpio.conf" | \
+    "${BIN[sed]}" 's/.*(\(.*\)).*/\1/g')"
+  [[ -n ${RETVALUE} ]] && echo "${RETVALUE}" || echo '[none]'
 }
 
 function GET_NANORC_COLORS {
@@ -232,25 +251,32 @@ function GET_NANORC_COLORS {
     USE_PRIVILEGE "${BIN[grep]}" -qsR '^\s*set [a-z]\+color [a-z,]\+' "${USERHOME}/.nanorc" && WHOHASIT+="and by ${USERHOME##*\/} "
     USE_PRIVILEGE "${BIN[grep]}" -qsR '^\s*set [a-z]\+color [a-z,]\+' "${USERHOME}/.config/nano/nanorc" && WHOHASIT+="and by ${USERHOME##*\/} "
   done
-  echo "${WHOHASIT% }"
+  [[ -n ${WHOHASIT} ]] && echo "${WHOHASIT% }" || echo '[not set]'
 }
 
 function GET_NANORC_INCLUDES {
-  "${BIN[grep]}" '^\s*include' "${OSCHROOT}/etc/nanorc" | "${BIN[cut]}" -d\  -f2 | \
-  "${BIN[tr]}" -d '"' | "${BIN[paste]}" -d,  -s | "${BIN[sed]}" 's/,/, /g'
+  local RETVALUE="$("${BIN[grep]}" '^\s*include' "${OSCHROOT}/etc/nanorc" | \
+    "${BIN[cut]}" -d\  -f2 | "${BIN[tr]}" -d '"' | "${BIN[paste]}" -d,  -s | \
+    "${BIN[sed]}" 's/,/, /g')"
+  [[ -n ${RETVALUE} ]] && echo "${RETVALUE}" || echo '[none]'
 }
 
 function GET_NANORC_OPTIONS {
-  local NANOOPTS="$("${BIN[grep]}" 'set ' "${OSCHROOT}/etc/nanorc" | "${BIN[grep]}" -v '[.,:;\"0-9]\|color')"
+  local NANOOPTS CFG_FILE="${OSCHROOT}/etc/nanorc"
 
-  case "${1}" in
-    all)
-      NANOOPTS=$("${BIN[sed]}" 's/^\s*\#*\s*set //g' <<< "${NANOOPTS}");;
-    enabled)
-      NANOOPTS=$("${BIN[grep]}" -v '^\s*#' <<< "${NANOOPTS}" | "${BIN[sed]}" 's/^\s*set\s*//g');;
-  esac
-
-  ${BIN[sort]} -u <<< "${NANOOPTS}" | ${BIN[paste]} -d\  -s
+  if [[ -e ${CFG_FILE} ]]; then
+    NANOOPTS="$("${BIN[grep]}" 'set ' "${OSCHROOT}/etc/nanorc" | "${BIN[grep]}" -v '[.,:;\"0-9]\|color')"
+    case "${1}" in
+      all)
+        NANOOPTS=$("${BIN[sed]}" 's/^\s*\#*\s*set //g' <<< "${NANOOPTS}");;
+      enabled)
+        NANOOPTS=$("${BIN[grep]}" -v '^\s*#' <<< "${NANOOPTS}" | "${BIN[sed]}" 's/^\s*set\s*//g');;
+    esac
+    NANOOPTS="$("${BIN[sort]}" -u <<< "${NANOOPTS}" | ${BIN[paste]} -d\  -s)"
+    [[ -n ${NANOTOPS} ]] && echo "${NANOOPTS}" || [[ ${1} == enabled ]] && echo '[none set]'
+  else
+    [[ ${1} == enabled ]] && echo '[no config]'
+  fi
 }
 
 function GET_NSSWITCH_HOSTS {
@@ -269,7 +295,14 @@ function GET_PACMAN_OPTIONS {
 }
 
 function GET_PRIMARY_LANGUAGE {
-  "${BIN[grep]}" LANGUAGE "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d= -f2
+  local RETVALUE CFG_FILE="${OSCHROOT}/etc/locale.conf"
+
+  if [[ -e ${CFG_FILE} ]]; then
+    RETVALUE="$("${BIN[grep]}" -s LANGUAGE "${CFG_FILE}" | "${BIN[cut]}" -d= -f2)"
+    [[ -n ${RETVALUE} ]] && echo "${RETVALUE}" || echo '[not selected]'
+  else
+    echo '[no config]'
+  fi
 }
 
 function GET_PLYMOUTH_THEME {
@@ -283,13 +316,13 @@ function GET_SMARTD_DEVICESCAN {
 function GET_SSHD_LISTEN_INFO {
   local CFG_FILE="${OSCHROOT}/etc/ssh/sshd_config"
   local GREP_STR='^\s*\(Port\|AddressFamily\|ListenAddress\)'
-  local RETVALUE="Service "
+  local SVCSTATE CENTRIES
 
-  IS_SSHD_ENABLED && RETVALUE+="enabled," || RETVALUE+="disabled,"
-  RETVALUE+="$("${BIN[grep]}" "${GREP_STR}" "${CFG_FILE}" | "${BIN[sort]}" | \
+  IS_SSHD_ENABLED && SVCSTATE+="enabled" || SVCSTATE+="disabled"
+  CENTRIES="$("${BIN[grep]}" -s "${GREP_STR}" "${CFG_FILE}" | "${BIN[sort]}" | \
     "${BIN[sed]}" 's/Address//g' | "${BIN[paste]}" -d,  -s)"
 
-  "${BIN[sed]}" 's/,/, /g;s/Listen/Address/g' <<< "${RETVALUE}"
+  "${BIN[sed]}" 's/,/, /g;s/Listen/Address/g' <<< "Service ${SVCSTATE}${RETVALUE+,}${RETVALUE:-,defaults}"
 }
 
 function GET_SYSTEMD_JOURNAL_SIZE {
@@ -323,13 +356,13 @@ function GET_SUDO_CONFIG {
   local SUDO_CFG INCL_DIR
 
   # Parse the config file into a variable (ignore commented-out and blank lines)
-  SUDO_CFG="$("${BIN[sudo]}" "${BIN[grep]}" -v '^\s*#\|^$' "${OSCHROOT}/etc/sudoers")"
+  SUDO_CFG="$("${BIN[sudo]}" "${BIN[grep]}" -sv '^\s*#\|^$' "${OSCHROOT}/etc/sudoers")"
 
   if [[ ${SUDO_CFG} =~ @includedir ]]; then
     # If the config file specified an @includedir, get configs from those files as well
     INCL_DIR="$("${BIN[grep]}" 'includedir' <<< "${SUDO_CFG}" | "${BIN[cut]}" -d\  -f2)"
     SUDO_CFG+=$'\n' # The trailing newline got stripped out, so add it back in
-    SUDO_CFG+="$("${BIN[sudo]}" sh -c "'${BIN[grep]}' -hv '^\s*#' ${OSCHROOT}${INCL_DIR}/*" | "${BIN[grep]}" -v "^\s*$")"
+    SUDO_CFG+="$("${BIN[sudo]}" sh -c "'${BIN[grep]}' -hsv '^\s*#' ${OSCHROOT}${INCL_DIR}/*" | "${BIN[grep]}" -v "^\s*$")"
   fi
 
   echo "${SUDO_CFG}"
@@ -366,15 +399,20 @@ function INTERPRET_SUDO_CONFIG {
     fi
   fi
 
-  "${BIN[sed]}" 's/, $//g' <<< "${MEANING}"
+  [[ -n ${MEANING} ]] && "${BIN[sed]}" 's/, $//g' <<< "${MEANING}" || echo '[nothing set]'
 }
 
 function GET_TIMEZONE {
-  local TIMEZONE="$("${BIN[readlink]}" "${OSCHROOT}/etc/localtime")"
-  case "${1}" in
-    short) "${BIN[sed]}" 's|.*zoneinfo/||g' <<< "${TIMEZONE}";;
-     full) echo "${TIMEZONE}";;
-  esac
+  local TIMEZONE
+  if [[ -L "${OSCHROOT}/etc/localtime" ]]; then
+    TIMEZONE="$("${BIN[readlink]}" "${OSCHROOT}/etc/localtime")"
+    case "${1}" in
+      short) "${BIN[sed]}" 's|.*zoneinfo/||g' <<< "${TIMEZONE}";;
+       full) echo "${TIMEZONE}";;
+    esac
+  else
+    echo '[not set]'
+  fi
 }
 
 function GET_USERNAMES {
@@ -424,11 +462,25 @@ function GET_USERNAME_SHELL {
 }
 
 function GET_VCONSOLE_FONT {
-  "${BIN[grep]}" FONT "${OSCHROOT}/etc/vconsole.conf" | "${BIN[cut]}" -d= -f2
+  local RETVALUE CFG_FILE="${OSCHROOT}/etc/vconsole.conf"
+  if [[ -e ${CFG_FILE} ]]; then
+    RETVALUE="$("${BIN[grep]}" -s FONT "${OSCHROOT}/etc/vconsole.conf" | \
+      "${BIN[cut]}" -d= -f2)"
+    [[ -n ${RETVALUE} ]] && echo "${RETVALUE}" || echo '[not selected]'
+  else
+    echo '[no config]'
+  fi
 }
 
 function GET_VCONSOLE_KEYMAP {
-  "${BIN[grep]}" KEYMAP "${OSCHROOT}/etc/vconsole.conf" | "${BIN[cut]}" -d= -f2
+  local RETVALUE CFG_FILE="${OSCHROOT}/etc/vconsole.conf"
+  if [[ -e ${CFG_FILE} ]]; then
+    RETVALUE="$("${BIN[grep]}" -s KEYMAP "${OSCHROOT}/etc/vconsole.conf" | \
+      "${BIN[cut]}" -d= -f2)"
+    [[ -n ${RETVALUE} ]] && echo "${RETVALUE}" || echo '[not selected]'
+  else
+    echo '[no config]'
+  fi
 }
 
 function GET_VIDEO_ACCELERATION_SCRIPT_RESULTS {
@@ -2109,7 +2161,12 @@ function REVIEW_MODE {
   MENU_STR+=("Console Font: $(GET_VCONSOLE_FONT)")
 
   MENU_TAG+=(hostname)
-  MENU_STR+=("Hostname: $(<"${OSCHROOT}/etc/hostname")")
+  if [[ -e "${OSCHROOT}/etc/hostname" ]]; then
+    CFG_LINE="$(<"${OSCHROOT}/etc/hostname")"
+  else
+    CFG_LINE='[not set]'
+  fi
+  MENU_STR+=("Hostname: ${CFG_LINE}")
 
   MENU_TAG+=(domain)
   MENU_STR+=("Local Domain: $(GET_LOCAL_DOMAIN)")
@@ -2139,7 +2196,7 @@ function REVIEW_MODE {
     OPENPRTS="$(GET_IPTABLES_PORTS_OPEN_GLOBALLY)"
     SHUTPRTS="$(GET_IPTABLES_PORTS_CLOSED_GLOBALLY)"
     if [[ -z ${SHUTPRTS} ]] && [[ -z ${OPENPRTS} ]]; then
-      CFG_LINE='file exists, no ports globally open or blocked'
+      CFG_LINE='no ports globally open or blocked'
     else
       CFG_LINE+="globaly open ports: ${OPENPRTS:-none}, "
       CFG_LINE+="globaly closed ports: ${SHUTPRTS:-none}"
@@ -2207,7 +2264,9 @@ function REVIEW_MODE {
 
   if [[ -e "${OSCHROOT}/etc/smartd.conf" ]]; then
     MENU_TAG+=(smart)
-    MENU_STR+=("SMARTd DEVICESCAN: $(GET_SMARTD_DEVICESCAN)")
+    CFG_LINE="$(GET_SMARTD_DEVICESCAN)"
+    [[ -z ${CFG_LINE} ]] && CFG_LINE='[no options set (default)]'
+    MENU_STR+=("SMARTd DEVICESCAN: ${CFG_LINE}")
   fi
 
   if [[ -e "${OSCHROOT}/etc/ntp.conf" ]]; then
