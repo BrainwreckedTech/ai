@@ -279,6 +279,24 @@ function GET_NANORC_OPTIONS {
   fi
 }
 
+function GET_NTP {
+  local CFG_FILE="${OSCHROOT}/etc/ntp.conf"
+  local UPSTREAM UNBLOCKD BLOCKED SERVEDTO
+  UPSTREAM="$("${BIN[grep]}" '^\s*server' "${CFG_FILE}" | "${BIN[wc]}" -l)"
+  if "${BIN[grep]}" '^\s*restrict\s*default.*noserve' "${CFG_FILE}"; then
+    UNBLOCKD="$("${BIN[grep]}" '^\s*restrict' "${CFG_FILE}" | \
+      "${BIN[grep]}" -v 'default\|noserve' | "${BIN[cut]}" -d\  -f2 | paste -d\  -s)"
+    [[ -z ${UNBLOCKD} ]] && unset UNBLOCKD
+    SERVEDTO="everyone blocked${UNBLOCKD+ except }${UNBLOCKD}"
+  else
+    BLOCKED="$("${BIN[grep]}" '^\s*restrict.*noserve' "${CFG_FILE}" | \
+      "${BIN[grep]}" -v 'default' | "${BIN[cut]}" -d\  -f2 | paste -d\  -s)"
+    [[ -z ${BLOCKED} ]] && unset BLOCKED
+    SERVEDTO="serve everyone${BLOCKED+ except }${BLOCKED}"
+  fi
+  echo "${UPSTREAM} upstream server(s), ${SERVEDTO}"
+}
+
 function GET_NSSWITCH_HOSTS {
   "${BIN[grep]}" '^\s*hosts' "${OSCHROOT}/etc/nsswitch.conf" | "${BIN[sed]}" 's/\s*hosts:\s*//g'
 }
@@ -2271,7 +2289,7 @@ function REVIEW_MODE {
 
   if [[ -e "${OSCHROOT}/etc/ntp.conf" ]]; then
     MENU_TAG+=(ntp)
-    MENU_STR+=("NTP Daemon: ")
+    MENU_STR+=("NTP Daemon: $(GET_NTP)")
   elif [[ -e "${OSCHROOT}/etc/systemd/timesyncd.conf" ]]; then
     MENU_TAG+=(sdtime)
     MENU_STR+=("Systemd Timesyncd: $(GET_SYSTEMD_TIMESYNCD_SERVERS)")
