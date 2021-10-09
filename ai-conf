@@ -1211,7 +1211,7 @@ function CONFIGURE_NTP {
 
   if [[ -z ${DEFAULTS[0]} ]]; then
     DEFAULTS[0]='0.arch.pool.ntp.org 1.arch.pool.ntp.org 2.arch.pool.ntp.org 3.arch.pool.ntp.org'
-    REGION="$("${BIN[grep]}" 'LANGUAGE' "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d_ -f2)"
+    REGION="$("${BIN[grep]}" -s 'LANGUAGE' "${OSCHROOT}/etc/locale.conf" | "${BIN[cut]}" -d_ -f2)"
     [[ -n ${REGION} ]] && DEFAULTS[0]="${DEFAULTS[0]//arch/${REGION,,}}"
   fi
 
