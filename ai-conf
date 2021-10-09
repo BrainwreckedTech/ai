@@ -2137,7 +2137,7 @@ function REVIEW_MODE {
   MENU_STR+=("OS Root Directory: ${OSCHROOT:-[current system]}")
 
   MENU_TAG+=(fstab)
-  MENU_STR+=("Filesystem Table: $(IS_FSTAB_SET && echo '[set]' || echo '[unset]')")
+  MENU_STR+=("Filesystem Table: $(IS_FSTAB_SET && echo '[present]' || echo '[not present]')")
 
   MENU_TAG+=(timezone)
   MENU_STR+=("Time Zone: $(GET_TIMEZONE short)")
