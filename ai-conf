@@ -163,6 +163,19 @@ function GET_DEFAULT_EDITOR {
   [[ -n ${RETVALUE} ]] && echo "${RETVALUE}" || echo '[not set]'
 }
 
+function GET_FAIL2BAN_SSHD {
+  local CFG_FILE="${OSCHROOT}/etc/fail2ban/jail.d/sshd.local"
+  if [[ -e "${CFG_FILE}" ]]; then
+    local MAXRETRY="$("${BIN[grep]}" 'maxretry' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d ' ')"
+    local FINDTIME="$("${BIN[grep]}" 'findtime' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d ' ')"
+    local BAN_TIME="$("${BIN[grep]}" 'bantime' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d ' ')"
+    local IGNOREIP="$("${BIN[grep]}" 'ignoreip' "${CFG_FILE}" | "${BIN[cut]}" -d= -f2 | "${BIN[sed]}" 's/^\s\+//g')"
+    printf 'Ban for %s after %s failures within %s, ignoring %s' "${BAN_TIME}" "${MAXRETRY}" "${FINDTIME}" "${IGNOREIP}"
+  else
+    echo '[no config]'
+  fi
+}
+
 function GET_RESOLV_LINK {
   "${BIN[readlink]}" "${OSCHROOT}/etc/resolv.conf"
 }
@@ -558,6 +571,43 @@ function CONFIGURE_DEFAULT_EDITOR {
   SELECTED="$(</tmp/selection)"
 
   USE_PRIVILEGE sh -c "echo 'export EDITOR=${SELECTED}' > '${CFG_FILE}'"
+}
+
+function CONFIGURE_FAIL2BAN_SSHD {
+  local -r CFG_FILE="${OSCHROOT}/etc/fail2ban/jail.d/sshd.local"
+  [[ -d ${CFG_FILE%/*} ]] || return 0
+  ##############################################################################
+  local -r BAKTITLE="Fail2Ban SSHD"
+  local -r HELP_MSG="Copy ${HOME}/fstab to ${CFG_FILE}?"
+  ##############################################################################
+  local LOCAL_HN IPFROMHF LOCAL_SN
+
+  if [[ -e ${CFG_FILE} ]]; then
+    DIALOG_YESNO "${TITLEBAR}" "Configuration Found" "Replace existing configuration?" || return 0
+    USE_PRIVILEGE "${BIN[mv]}" "${CFG_FILE}" "${CFG_FILE}.$("${BIN[date]}" +%Y-%m-%d_%H:%M:%S)"
+  fi
+
+  LOCAL_HN="$(<"${OSCROOT}/etc/hostname")"
+  IPFROMHF="$("${BIN[grep]}" "[0-9.]\{7,15\}.*${LOCAL_HN}" "${OSCHROOT}" | "${BIN[sed]}" 's/\s.*//g')"
+  if ! [[ ${IPFROMHF} =~ ^127 ]]; then
+    case "${IPFROMHN}" in
+           10.*) SNSUFFIX='/8';;
+      169.254.*) SNSUFFIX='/16';;
+      192.168.*) SNSUFFIX='/24';;
+    esac
+    LOCAL_SN="${IPFROMHF}${SNSUFFIX}"
+  fi
+  USE_PRIVILEGE sh -c "cat <<- ENDOFSCRIPT > '${CFG_FILE}'
+	[sshd]
+	enabled         = true
+	filter          = sshd
+	banaction       = iptables
+	backend         = systemd
+	maxretry        = 5
+	findtime        = 24h
+	bantime         = 2w
+	ignoreip        = 127.0.0.1/8${LOCAL_SN+ }${LOCAL_SN}
+	ENDOFSCRIPT"
 }
 
 function CONFIGURE_FSTAB {
@@ -2223,6 +2273,11 @@ function REVIEW_MODE {
   fi
   MENU_STR+=("IPTables: ${CFG_LINE}")
 
+  if [[ -d "${OSCHROOT}/etc/fail2ban/jail.d" ]]; then
+    MENU_TAG+=(fail2ban)
+    MENU_STR+=("Fail2Ban SSHD: $(GET_FAIL2BAN_SSHD)")
+  fi
+
   if [[ -e "${OSCHROOT}/etc/mkinitcpio.conf" ]]; then
     MENU_TAG+=(initmods)
     MENU_STR+=("MkInitCPIO Modules: $(GET_MKINITCPIO_MODULES)")
@@ -2357,6 +2412,7 @@ function REVIEW_MODE {
        resolv) true;;
          sshd) true;;
      iptables) CONFIGURE_IPTABLES;;
+     fail2ban) CONFIGURE_FAIL2BAN_SSHD;;
      initmods) CONFIGURE_MKINITCPIO_MODULES;;
     inithooks) CONFIGURE_MKINITCPIO_HOOKS;;
      initcomp) CONFIGURE_MKINITCPIO_COMPRESSION;;
