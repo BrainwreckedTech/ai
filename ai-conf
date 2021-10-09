@@ -2265,7 +2265,7 @@ function REVIEW_MODE {
     if [[ -z ${SHUTPRTS} ]] && [[ -z ${OPENPRTS} ]]; then
       CFG_LINE='no ports globally open or blocked'
     else
-      CFG_LINE+="globaly open ports: ${OPENPRTS:-none}, "
+      CFG_LINE="globaly open ports: ${OPENPRTS:-none}, "
       CFG_LINE+="globaly closed ports: ${SHUTPRTS:-none}"
     fi
   else
