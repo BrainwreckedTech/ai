@@ -13,7 +13,7 @@ declare PT_NAMES
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in awk column id lsblk mount partprobe rev rmdir sfdisk umount; do
+for CMD in awk column id lsblk mkdir mount partprobe rev rmdir sfdisk umount; do
     BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
@@ -376,7 +376,7 @@ function FINALIZE {
   esac
 
   while read -r FSSCRIPT; do
-    [[ ${FSSCRIPT} =~ /mount ]] && ! ${REQMOUNT} && REQMOUNT=true && SCRIPT+=('mkdir /mnt/phtm')
+    [[ ${FSSCRIPT} =~ /mount ]] && ! ${REQMOUNT} && REQMOUNT=true && SCRIPT+=("'${BIN[mkdir]}' /mnt/phtm")
     SCRIPT+=("${FSSCRIPT}")
   done <<< "$(GENERATE_MKFS_COMMANDS)"
 
