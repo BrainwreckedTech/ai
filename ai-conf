@@ -2407,9 +2407,23 @@ function REVIEW_MODE {
      hostname) CONFIGURE_HOSTNAME;;
        domain) CONFIGURE_LOCAL_DOMAIN;;
         hosts) CONFIGURE_HOSTS;;
-     nsswitch) true;;
+     nsswitch)
+          BAKTITLE="Name Service Switch Configuration"
+          HELP_MSG="This option is configured via systemd-resolved "
+          HELP_MSG+="configuration and is not handled directly.\n\n"
+          HELP_MSG+="Start systemd-resolved configuation?"
+          if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+            CONFIGURE_SYSTEMD_RESOLVED
+          fi;;
      sdresolv) CONFIGURE_SYSTEMD_RESOLVED;;
-       resolv) true;;
+       resolv)
+          BAKTITLE="/etc/resolv configuration"
+          HELP_MSG="This option is configured via systemd-resolved "
+          HELP_MSG+="configuration and is not handled directly.\n\n"
+          HELP_MSG+="Start systemd-resolved configuation?"
+          if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+            CONFIGURE_SYSTEMD_RESOLVED
+          fi;;
          sshd) true;;
      iptables) CONFIGURE_IPTABLES;;
      fail2ban) CONFIGURE_FAIL2BAN_SSHD;;
