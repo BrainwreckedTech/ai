@@ -2198,8 +2198,6 @@ function REVIEW_MODE {
   unset MENU_TAG MENU_STR
   unset CFG_LINE HOOK_MSG OPENPRTS SHUTPRTS RSLVLINK SCR_RSLT SVC_STAT SELECTED
 
-  GET_PRIVILEGE
-
   MENU_TAG+=(chroot)
   MENU_STR+=("OS Root Directory: ${OSCHROOT:-[current system]}")
 
@@ -2312,6 +2310,7 @@ function REVIEW_MODE {
   fi
 
   if [[ -e "${OSCHROOT}/etc/sudoers" ]]; then
+    GET_PRIVILEGE
     MENU_TAG+=(sudo)
     MENU_STR+=("Sudo Config: $(INTERPRET_SUDO_CONFIG)")
   fi
