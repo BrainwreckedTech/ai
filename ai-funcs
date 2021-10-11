@@ -637,6 +637,5 @@ function DIALOG_SINGLE_SELECT {
   done
 
   "${BIN[rm]}" -f /tmp/selection; "${BIN[touch]}" /tmp/selection
-  echo "${COMMAND} ${DLGREDIR} /tmp/selection" >> /tmp/aipdebug
   eval "${COMMAND} ${DLGREDIR} /tmp/selection"
 }
