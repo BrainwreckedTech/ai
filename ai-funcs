@@ -579,6 +579,7 @@ function DIALOG_SINGLE_SELECT {
   local HELP_MSG="${5}"
   local -n ITEMTAGS="${6}"
   local -n ITEMOPTS="${7}"
+  local CANCELBL="${8}"
   local -a SELSTATE
   local SWITCHES
 
@@ -599,15 +600,17 @@ function DIALOG_SINGLE_SELECT {
 
   case "${BIN[dialog]}" in
     *Xdialog)
-      SWITCHES="${HIDETAGS} --radiolist ";;
+      [[ -n ${CANCELBL} ]] && SWITCHES="--cancel-label ${CANCELBL} "
+      SWITCHES+="${HIDETAGS} --radiolist ";;
     *kdialog)
-      SWITCHES="--radiolist ";;
+      SWITCHES+="--radiolist ";;
     *zenity)
-      SWITCHES='--list --radiolist --column='' --column='' --column='' '
+      SWITCHES+='--list --radiolist --column='' --column='' --column='' '
       [[ -n ${HIDETAGS} ]] && SWITCHES+='--hide-column=2 '
       SWITCHES+='--text=';;
     *dialog)
-      SWITCHES="${HIDETAGS} --default-item '${DFLTITEM}' --menu ";;
+      [[ -n ${CANCELBL} ]] && SWITCHES="--cancel-label ${CANCELBL} "
+      SWITCHES+="${HIDETAGS} --default-item '${DFLTITEM}' --menu ";;
   esac
 
   if [[ ${BIN[dialog]} =~ zenity ]]; then
