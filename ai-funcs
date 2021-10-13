@@ -5,8 +5,8 @@ declare -r GIBIBYTE="$((2**30))"
 declare -r MEGABYTE="1000000"
 declare -r GIGABYTE="1000000000"
 declare -r -i LIST_PAD=7 MULTIPAD=14 SNGL_PAD=10 TITLEPAD=4 SLCT_PAD=6
-
 declare -A BIN FILE
+declare ERR_LIST
 
 ################################################################################
 # Hunt down the actual command being called, even if aliased
@@ -20,7 +20,7 @@ function GET_COMMAND {
     done
     [[ -n "${COMMAND}" ]] && break
   done
-  echo "${COMMAND}"
+  [[ -n "${COMMAND}" ]] && echo "${COMMAND}"
 }
 
 ################################################################################
