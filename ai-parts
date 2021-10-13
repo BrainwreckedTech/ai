@@ -9,7 +9,7 @@ declare -i DLG_HIGH DLG_WIDE LST_HIGH
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in awk column id lsblk partprobe rmdir sfdisk; do
+for CMD in column id lsblk partprobe rmdir sfdisk; do
     BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
