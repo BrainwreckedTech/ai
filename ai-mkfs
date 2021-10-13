@@ -337,7 +337,7 @@ function SELECT_FORMAT_SIMPLE {
   if [[ ${FS_TYPE[${PARTNAME}]} == btrfs ]]; then
     ######################################################################
     BAKTITLE="BTRFS Subvolumes"
-    HELP_MSG="If you''d like to use subvolumes for ${PT_LABEL["${PARTNAME}"]}, "
+    HELP_MSG="If you'\\''d like to use subvolumes for ${PT_LABEL["${PARTNAME}"]}, "
     HELP_MSG+="enter a space-separated list here:\n\n"
     HELP_MSG+="NOTE: THE FIRST SUBVOLUME WILL BE ${WARN}"
     ######################################################################
