@@ -6,6 +6,7 @@ declare -r TITLEBAR="AI PACKAGE SELECTION"
 declare -i DLG_HIGH DLG_WIDE LST_HIGH
 declare -A INTENTS PACKAGES
 declare -a BROWSERS_BLINK BROWSERS_GECKO BROWSERS_WBKT2GTK BROWSERS_QTWEBKIT
+declare MOUNTPNT
 
 ################################################################################
 # Overly-cautious verification of required binaries
