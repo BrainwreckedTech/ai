@@ -482,7 +482,6 @@ function CONFIGURE_SYSTEMD_BOOT {
 }
 
 function INSTALL_EFI_BOOT_ENTRY {
-  set -x
   case "${SYSTEM[cpu-arch]}" in
     *86)
       case "${SYSTEM[fw-bits]}" in
