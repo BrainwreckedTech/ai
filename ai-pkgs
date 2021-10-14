@@ -762,6 +762,7 @@ function OPTION_SCRIPT_DEBUGGING {
 }
 
 function OPTION_STEAM {
+  IS_REPO_PKG steam || return 0
   ##############################################################################
   local -r BAKTITLE="Steam"
   local -r HELP_MSG="Install Valve'\\''s Steam client?"
