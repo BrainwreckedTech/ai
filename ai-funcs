@@ -27,8 +27,9 @@ function GET_COMMAND {
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in awk cat cut find fold grep lscpu lspci printf rm sed sort sudo stty touch tr wc; do
-  BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
+for CMD in awk cat cut find fold grep lsblk lscpu lspci printf rm sed sort \
+  sudo stty touch tr wc; do
+    BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
 ################################################################################
