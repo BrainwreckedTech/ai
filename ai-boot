@@ -1,0 +1,958 @@
+#!/usr/bin/env bash
+
+source ai-funcs
+
+################################################################################
+# Here are more global variables to share amongst functions
+################################################################################
+declare -r TITLEBAR="AI BOOT" ESP_GUID="$(GET_PARTITION_ID efisp)"
+declare EFISPDIR ESP_BDEV ESP_DISK ESP_PART OSCHROOT WIDEHACK="${GUI_WIDE}"
+
+################################################################################
+# Overly-cautious verification of required binaries
+################################################################################
+
+for CMD in cp dd df efibootmgr find head mkdir mount paste tail; do
+    BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
+done
+
+CHECK_FOR_FAILURE_POINTS
+
+function USE_PRIVILEGE {
+  # This is just a wrapper so you don't have to type "${BIN[sudo]}" all the time
+  GET_PRIVILEGE && "${BIN[sudo]}" "${@}" || return 1
+}
+
+function DEFAULT_MOUNT_OPTIONS {
+  # The purpose here is to build a regex string for sed to use to exclude the
+  # default mount options that show up in `mount`
+  local -a DFLTOPTS
+  
+  # General default mount options
+  DFLTOPTS+=('nodev')                 # do not interpret special devices on this filesystem
+  DFLTOPTS+=('nosuid')                # do not honor set[ug]id bits on this filesystem
+  DFLTOPTS+=('rw')                    # allow read/write access
+  DFLTOPTS+=('relatime')              # access time updating
+  DFLTOPTS+=('x-systemd[a-z.=-]\+')   # normally not interested in these for our purposes
+  # BTRFS
+  DFLTOPTS+=('space_cache')           # free space map caching
+  DFLTOPTS+=('ssd')                   # this option is determined on mount
+  DFLTOPTS+=('subvol=\/,')            # this is the default subvolume mounted
+  DFLTOPTS+=('subvolid=[0-9]\+')      # ignore subvolids
+  # F2FS
+  DFLTOPTS+=('lazytime')              # only update times on the cache version
+  DFLTOPTS+=('background_gc=on')      # garbage collection
+  DFLTOPTS+=('discard')               # real-time TRIM
+  DFLTOPTS+=('no_heap')               # disable heap-style segment allocation
+  DFLTOPTS+=('acl')                   # enable POSIX access control list
+  DFLTOPTS+=('inline_data')           # write small files into the inode block
+  DFLTOPTS+=('inline_dentry')         # write small directories into the inode block
+  DFLTOPTS+=('flush_merge')           # merge concurrent cache flushes as much as possible
+  DFLTOPTS+=('extent_cache')          # enable an extent cache based on rb-tree
+  DFLTOPTS+=('mode=adaptive')         # block allocation mode
+  DFLTOPTS+=('active_logs=6')         # number of active logs
+  DFLTOPTS+=('active_logs=6')         # number of active logs
+  DFLTOPTS+=('alloc_mode=reuse')      # adjust block allocation policy to reuse
+  DFLTOPTS+=('fsync_mode=posix')      # follow POSIX semantics for syncing to disk
+  DFLTOPTS+=('[nouseril]\+_xattr')    # disregard *_attr flags
+  # FAT
+  DFLTOPTS+=('codepage=437')          # default codepage
+  DFLTOPTS+=('dmask=0022')            # pretend directory perms are 0755
+  DFLTOPTS+=('errors=remount-ro')     # mount read-only on errors
+  DFLTOPTS+=('fmask=0022')            # pretend file perms are 0755
+  DFLTOPTS+=('iocharset=ascii')       # default character set
+  DFLTOPTS+=('shortname=mixed')       # default shortname handling
+  DFLTOPTS+=('utf8')                  # default filesystem-safe 8-bit encoding of unicode
+  # NFS
+  DFLTOPTS+=('addr=[0-9.:]\+')        # this is usually specified as the 'device'
+  DFLTOPTS+=('local_lock=none')       # no file locking
+  DFLTOPTS+=('namlen=[0-9]\+')        # this is negotiated
+  DFLTOPTS+=('clientaddr=[0-9.:]\+')  # always the local machine
+  DFLTOPTS+=('[rw]size=[0-9]\+')      # this is negotiated
+  DFLTOPTS+=('proto=tcp')             # this is negotiated
+  DFLTOPTS+=('timeo=600')             # default timeout
+  DFLTOPTS+=('retrans=2')             # default retransmission attempts
+  DFLTOPTS+=('sec=sys')               # default security handling
+  # NTFS
+  DFLTOPTS+=('allow_other')           # allow others read access
+  DFLTOPTS+=('blksize=[0-9]\+')       # this is determined on mount
+  DFLTOPTS+=('group_id=[0-9]\+')      # determined by who mounted
+  DFLTOPTS+=('user_id=[0-9]\+')       # determined by who mounted
+  # XFS
+  DFLTOPTS+=('attr2')                 # enable improved inline extended attribute storage
+  DFLTOPTS+=('inode64')               # enable 64-bit inode numbers
+  DFLTOPTS+=('logbufs=8')             # number of in-memory log buffers
+  DFLTOPTS+=('logbsize=32k')          # size of each in-memory log buffer
+  DFLTOPTS+=('noquota')               # disable all quota accounting and enforcement
+
+  REGEXSTR="\("
+  for MTOPTION in "${DFLTOPTS[@]}"; do
+    REGEXSTR+="${MTOPTION}\|"
+  done
+  REGEXSTR="${REGEXSTR%\\|}"
+  REGEXSTR+="\),\?"
+  echo "${REGEXSTR}"
+}
+
+function ASK_EFI_STANDARD_OR_DEFAULT {
+  local LOCATION="${1}"
+  local -r BAKTITLE='Installation Type'
+  local -r HELP_MSG='Do you want to install normally, or as a default bootloader?'
+
+  SUGGESTS+=("${LOCATION}" "${LOCATION%%/EFI*}/EFI/Boot")
+  DESCRIPS+=("Install bootloader normally (in /EFI${LOCATION##*/EFI}) and create boot entry if needed"
+             "Install bootloader as default (in /EFI/Boot) and do not create a boot entry")
+  
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${LOCATION}" \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
+}
+
+function ASK_REFIND_THEME {
+  ##############################################################################
+  local -r BAKTITLE="rEFInd Theme"
+  local -r HELP_MSG="Which theme do you want to use?"
+  ##############################################################################
+  local -a RFTHEMES
+
+  IFS=$'\n' read -r -d '' -a RFTHEMES < <("${BIN[find]}" "${EFISPDIR}/EFI/refind" -mindepth 2 -type d -name 'icons' | "${BIN[sed]}" "s|${EFISPDIR}/EFI/refind/\(.*\)/icons|\1|g")
+  [[ ${#RFTHEMES[@]} -eq 0 ]] && echo 'default' > /tmp/selection && return 0
+  RFTHEMES+=('default')
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" "hidetags" '' \
+    "${HELP_MSG}" 'RFTHEMES' 'RFTHEMES' || return 1
+}
+
+function CHOOSE_KCL_OPTIONS {
+  ##############################################################################
+  local -r BAKTITLE="Kernel Command Line Options"
+  local -r HELP_MSG="Choose which options you want:"
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS SELSTATE UHKCLOPS
+
+  SUGGESTS+=('acpi_backlight=vendor' 'consoleblank=0' 'ipv6.disable=1' 'net.ifnames=0' 'nvidia-drm.modeset=1' quiet)
+  DESCRIPS+=('Prefer vendor-specific acpi_backlight driver'
+             "Don'\\''t blank the physical console"
+             'Disable IPv6'
+             'Disable persistent network interface names (go back to eth[n], etc.)'
+             'Enable kernel mode setting for proprietary NVIDIA drives'
+             'No init output except for errors')
+
+  for KRNL_OPT in "${SUGGESTS[@]}"; do
+    "${BIN[grep]}" -qs "${KRNL_OPT}" /proc/cmdline && SELSTATE+=('on') || SELSTATE+=('off')
+  done
+  
+  IFS=$'\n' read -r -d '' -a UHKCLOPS < <(FIND_UNHANDLED_KCL_OPTIONS)
+
+  for KRNL_OPT in "${UHKCLOPS[@]}"; do
+    SUGGESTS+=("${KRNL_OPT}")
+    DESCRIPS+=("[discovered unhandled kernel command line parameter in /proc/cmdline]")
+    SELSTATE+=('on')
+  done
+
+  DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
+}
+
+function FIND_UNHANDLED_KCL_OPTIONS {
+  local -a HANDLED
+  local GREP_STR
+
+  # Handled as part of LUKS discovery
+  HANDLED+=(cryptdevice= cryptkey= crypto=)
+  # Options given by CHOOSE_KCL_OPTIONS
+  HANDLED+=(acpi_backlight=vendor)
+  HANDLED+=(consoleblank=0)
+  HANDLED+=(ipv6.disable=1 net.ifnames=0)
+  HANDLED+=(nvidia-drm.modeset=1)
+  HANDLED+=(quiet)
+  # Handled as part of Plymouth of discovery
+  HANDLED+=(splash loglevel=3 rd.systemd.show_status=auto rd.udev.log_priority=3 vt.global_cursor_default=0)
+  # Normally derived
+  HANDLED+=(initrd= root= rootflags= zfs=)
+  # Forbidden -- handled in relation to the init system
+  HANDLED+=(ro rw)
+
+  for KCL_OPTN in "${HANDLED[@]}"; do
+    GREP_STR+="${KCL_OPTN}\|"
+  done
+  GREP_STR="${GREP_STR%\\|}"
+
+  "${BIN[cat]}" /proc/cmdline | "${BIN[tr]}" ' ' '\n' | "${BIN[grep]}" -v "${GREP_STR}"
+}
+
+function GET_ACTIVE_STANZA_REFIND {
+  local GREP_STR CFG_FILE
+  GREP_STR="menuentry\s+\"?${1}\"?\s+{\n([[:print:]\t]+(?<!disabled)\n)+}\n"
+  CFG_FILE="${EFISPDIR}/EFI/refind/refind.conf"
+  "${BIN[grep]}" -Pzo "${GREP_STR}" "${CFG_FILE}" | "${BIN[tr]}" -d '\0'
+}
+
+function GET_ACTIVE_STANZA_NAMES_REFIND {
+  local GREP_STR CFG_FILE
+  GREP_STR="menuentry\s+\"?[[:alnum:] ]+\"?\s+{\n([[:print:]\t]+(?<!disabled)\n)+}\n"
+  CFG_FILE="${EFISPDIR}/EFI/refind/refind.conf"
+  "${BIN[grep]}" -Pzo "${GREP_STR}" "${CFG_FILE}" | "${BIN[tr]}" -d '\0' | \
+  "${BIN[grep]}" -P 'menuentry(?<!submenuentry)' | \
+  "${BIN[sed]}" 's/menuentry //g;s/[ \t]*{.*$//g' | "${BIN[tr]}" -d '"'
+}
+
+function GET_BOOTLOADER_READABLE_PATH {
+  local -a CANDIDATES; local CANDIDATE GREP_STR
+  
+  case "${1}" in
+           grub2) GREP_STR="\(btrfs\|ext[234]\|f2fs\|jfs\|nilfs\|ntfs\|reiser\|ufs\|vfat\|xfs\|zfs\)";;
+          refind) GREP_STR="\(btrfs\|ext[234]\|hfs\|reiser\|vfat\)";;
+        syslinux) GREP_STR="\(btrfs\|ext[234]\|ntfs\|ufs\|vfat\|xfs\)";;
+    systemd-boot) GREP_STR="vfat";;
+  esac
+
+  IFS=$'\n' read -r -d '' -a CANDIDATES < <("${BIN[mount]}" | "${BIN[grep]}" "${OSCHROOT}[ /]" | "${BIN[grep]}" "${GREP_STR}" | ${BIN[cut]} -d\  -f3)
+
+  for CANDIDATE in "${CANDIDATES[@]}"; do
+    compgen -G "${CANDIDATE}"/*vmlinuz-linux* > /dev/null && echo "${CANDIDATE}"
+  done
+}
+
+function GET_ESP_MOUNTPOINT {
+  local CHOICES
+
+  CHOICES="$("${BIN[lsblk]}" -lno NAME,PARTTYPE | "${BIN[grep]}" "${ESP_GUID}" | \
+    "${BIN[cut]}" -d\  -f1 | "${BIN[paste]}" -d\  -s)"
+
+   "${BIN[mount]}" | "${BIN[grep]}" "${CHOICES// /\\|}" | \
+     "${BIN[grep]}" "${OSCHROOT}" | "${BIN[cut]}" -d\  -f3 | "${BIN[paste]}" -d\  -s
+}
+
+function GET_IMAGES_PATH {
+  local IMG_PATH; local -i LC
+
+  while true; do
+    ((LC++))
+    IMG_PATH="$("${BIN[find]}" "${1}" -maxdepth "${LC}" -name 'vmlinuz*' 2> /dev/null | "${BIN[sort]}" | "${BIN[head]}" -1)"
+    [[ -n ${IMG_PATH} ]] && break
+  done
+  IMG_PATH="${IMG_PATH%/vmlinuz*}"
+  echo "${IMG_PATH#${1}}"
+}
+
+function GET_KCL_ROOT_FLAGS {
+  "${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type" | \
+    "${BIN[sed]}" 's/.*(\(.*\))/\1/g' | "${BIN[sed]}" "s/$(DEFAULT_MOUNT_OPTIONS)//g;s/,$//g"
+
+}
+
+function GET_LUKS_KCL {
+  DUMPINFO="$(USE_PRIVILEGE /sbin/cryptsetup luksDump "${1}")"
+  LUKSUUID="$("${BIN[grep]}" 'UUID' <<< "${DUMPINFO}" | "${BIN[sed]}" 's/.*\s\+//g')"
+  CPHRNAME="$("${BIN[grep]}" 'Cipher name' <<< "${DUMPINFO}" | "${BIN[sed]}" 's/.*\s\+//g')"
+  CPHRMODE="$("${BIN[grep]}" 'Cipher mode' <<< "${DUMPINFO}" | "${BIN[sed]}" 's/.*\s\+//g')"
+  HASHSPEC="$("${BIN[grep]}" Hash <<< "${DUMPINFO}" | "${BIN[sed]}" 's/.*\s\+//g')"
+  KEY_SIZE="$("${BIN[grep]}" 'MK bits' <<< "${DUMPINFO}" | "${BIN[sed]}" 's/.*\s\+//g')"
+  CRYPTDVC="cryptdevice=/dev/disk/by-uuid/${LUKSUUID}"
+  CRYPTOCL="crypto=${HASHSPEC}:${CPHRNAME}-${CPHRMODE}:${KEY_SIZE}:0:"
+  echo "${CRYPTOCL} ${CRYPTDVC}"
+}
+
+function GET_REFIND_OPTINFO {
+  local CFG_OPTN="${1}"
+
+  # This is a hack to distinguish 'banner' from 'banner_scale'
+  # Since use_graphics_for can legitmately be unset, we can't rely on a
+  # whitespace character always following an option name
+  [[ ${CFG_OPTN} == banner ]] && CFG_OPTN='banner\s'
+
+  "${BIN[grep]}" -Pzo "(?s)\n(#[^\n]*\n)*#?${CFG_OPTN}[^\n]*\n" "${EFISPDIR}/EFI/refind/refind.conf" | \
+    "${BIN[tr]}" -d '\0' | "${BIN[grep]}" '^# ' | \
+    "${BIN[sed]}" "s/# //g;s/'/'\\\''/g" | \
+    "${BIN[sed]}" ':a;N;$!ba;s/\n \{3,\}/ /g;s/what\norder/what order/g;s/all\nOSes/all OSes/g;s/the\nEFI/the EFI/g;s/\n\([a-z(]\+\)/ \1/g;s/\n\([A-Z(]\+\)/\n\n\1/g;' | \
+    "${BIN[sed]}" 's/^ \+-\? \?\**/• /g' |
+    "${BIN[sed]}" ':a;N;$!ba;s/\(\(\n•[^\n]\+\)\+\)/\n\1/g'
+}
+
+function GET_SYSTEMD_BOOT_OPTINFO {
+  case "${1}" in
+    default)
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			Select the default entry. The default entry may be changed in the boot
+			menu itself, in which case the name of the selected entry will be stored
+			as an EFI variable, overriding this option.
+			ENDOFSCRIPT
+      ;;
+    timeout)
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			How long the boot menu should be shown before the default entry is
+			booted, in seconds. This may be changed in the boot menu itself and will
+			be stored as an EFI variable in that case, overriding this option. If the
+			timeout is disabled, the default entry will be booted immediately. The menu
+			can be shown by pressing and holding a key before systemd-boot is launched.
+			ENDOFSCRIPT
+      ;;
+    console-mode)
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			Configure the resolution of the console.
+			ENDOFSCRIPT
+      ;;
+    editor)
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			Enable the kernel command line editor? The editor should be
+			disabled if the machine can be accessed by unauthorized persons.
+			ENDOFSCRIPT
+      ;;
+    auto-entries)
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			Enable the disable entries for other boot entries found on the boot
+			partition? In particular, this may be useful when loader entries are
+			created to show replacement descriptions for those entries.
+			ENDOFSCRIPT
+      ;;
+    auto-firmware)
+      echo 'Enable the "Reboot into firmware" entry?'
+      ;;
+    random-seed-mode)
+      echo 'How should systemd-boot handle the random-seed file?'
+      ;;
+  esac
+
+}
+
+function GET_ROOT_BLOCK_DEVICE {
+  local FSYSTYPE
+  FSYSTYPE="$("${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type" | "${BIN[cut]}" -d\  -f5)"
+  if [[ ${FSYSTYPE} == zfs ]]; then
+    printf 'zfs='
+    "${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type zfs" | "${BIN[cut]}" -d\  -f1
+  else
+    "${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type" | "${BIN[cut]}" -d\  -f1
+  fi
+}
+
+function GET_ROOT_KCL {
+  local PRT_UUID PRTLABEL
+  PRT_UUID="$("${BIN[lsblk]}" -lno NAME,UUID | "${BIN[grep]}" "${1##*/}" | "${BIN[sed]}" 's/.* //g')"
+  PRTLABEL="$("${BIN[lsblk]}" -lno NAME,LABEL | "${BIN[grep]}" "${1##*/}" | "${BIN[sed]}" 's/.* //g')"
+  if [[ -n ${PRTLABEL} ]]; then
+    echo "root=LABEL=${PRTLABEL}"
+  elif [[ -n ${PRT_UUID} ]]; then
+    echo "root=UUID=${PRT_UUID}"
+  else
+    echo "root=${BLOCKDEV}"
+  fi
+}
+
+function GET_VOLUME_ID {
+  local BLOCKDEV PARTUUID PARTNAME
+  BLOCKDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${1} type" | "${BIN[cut]}" -d\  -f1  | "${BIN[sed]}" 's|/dev/||g')"
+  PARTUUID="$("${BIN[lsblk]}" -lno NAME,PARTUUID | "${BIN[grep]}" "${BLOCKDEV}" | "${BIN[sed]}" 's/.* //g')"
+  PARTNAME="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${BLOCKDEV}" | "${BIN[sed]}" 's/.* //g')"
+  [[ -n ${PARTNAME} ]] && echo "\"${PARTNAME}\"" || echo "${PARTUUID}"
+}
+
+function CONFIGURE_REFIND {
+  local CFG_OPTN EXISTCFG BTLDRCFG="${EFISPDIR}/EFI/refind/refind.conf"
+  local SUGGESTS DESCRIPS SELSTATE
+  local -ra LOOK_FOR=(timeout:range use_nvram:bool banner:select textonly:bool
+                      textmode:select resolution:text use_graphics_for:multi
+                      showtools:text scanfor:text dont_scan_dirs:text
+                      scan_all_linux_kernels:bool default_selection:select)
+
+  for CFG_OPTN in "${LOOK_FOR[@]}"; do
+    [[ ${CFG_OPTN%:*} == showtools ]] && GUI_WIDE=768
+    [[ ${CFG_OPTN%:*} == default_selection ]] && GUI_WIDE=768
+    [[ ${CFG_OPTN%:*} == scanfor ]] && GUI_WIDE="${WIDEHACK}"
+    EXISTCFG="$("${BIN[grep]}" "^\s*#*${CFG_OPTN%:*}" "${BTLDRCFG}" | ${BIN[cut]} -d\  -f2- | "${BIN[tail]}" -1)"
+    HELP_MSG="$(GET_REFIND_OPTINFO "${CFG_OPTN%:*}")"
+    unset SUGGESTS DESCRIPS SELSTATE
+    case "${CFG_OPTN#*:}" in
+      bool)
+        [[ ${CFG_OPTN#*:} == textonly ]] && BOOLTRUE=1 && BOOLNOPE=0
+        [[ ${CFG_OPTN#*:} != textonly ]] && BOOLTRUE='true' && BOOLNOPE='false'
+        DIALOG_YESNO "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" \
+          && echo "${BOOLTRUE}" > /tmp/selection || echo "${BOOLNOPE}" > /tmp/selection
+        ;;
+      text)
+        DIALOG_INPUT "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" "${EXISTCFG}" || return 1
+        ;;
+      multi)
+        case "${CFG_OPTN%:*}" in
+          use_graphics_for)
+            SUGGESTS+=(elilo grub linux osx windows)
+            DESCRIPS+=('The ELILO boot loader' 'The GRUB (Legacy or 2) boot loader'
+                       'A Linux kernel with EFI stub loader' macOS 'Microsoft Windows')
+            for OPTION in "${SUGGESTS[@]}"; do
+              "${BIN[grep]}" -qs "^use_graphics_for.*${OPTION}" "${BTLDRCFG}" \
+                && SELSTATE+=(on) || SELSTATE+=(off)
+            done
+            ;;
+        esac
+        DIALOG_MULTI_SELECT "${TITLEBAR}" "${CFG_OPTN%:*}" 'showtags' \
+          "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return 1
+        ;;
+      select)
+        case "${CFG_OPTN%:*}" in
+          banner)
+            IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${BTLDRCFG%\/refind.conf}" \( -name '*.bmp' -o -name '*.jpg' -o -name '*.png' \) | ${BIN[grep]} -v '/icons/\|/fonts/\|/selection[a-z_]\+\.png' | ${BIN[sed]} "s|${BTLDRCFG%\/refind.conf}/||g")
+            IFS=$'\n' read -r -d '' -a DESCRIPS < <("${BIN[find]}" "${BTLDRCFG%\/refind.conf}" \( -name '*.bmp' -o -name '*.jpg' -o -name '*.png' \) | ${BIN[grep]} -v '/icons/\|/fonts/\|/selection[a-z_]\+\.png' | ${BIN[sed]} "s|${BTLDRCFG%\/refind.conf}/||g")
+            ;;
+          textmode)
+            SUGGESTS=(0 1 2 1024)
+            DESCRIPS=('Standard UEFI 80x25 mode'
+                      '80x50 mode, not supported by all devices'
+                      'First non-standard mode provided by the firmware, if any'
+                      'Keep the mode selected by firmware (the default)')
+            ;;
+          default_selection)
+            LC=0
+            while read -r BT_ENTRY; do
+              ((LC++))
+              SUGGESTS+=("${LC}")
+              DESCRIPS+=("${BT_ENTRY}")
+            done < <(GET_ACTIVE_STANZA_NAMES_REFIND)
+            ;;
+        esac
+        [[ ${CFG_OPTN%:*} == banner ]] && TAG_VIEW='hidetags' || TAG_VIEW='showtags'
+        DIALOG_SINGLE_SELECT "${TITLEBAR}" "${CFG_OPTN%:*}" "${TAG_VIEW}" "${EXISTCFG}" \
+          "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
+        ;;
+      range)
+        DIALOG_RANGE "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" 0 60 2 || return 1
+        ;;
+    esac
+    SELECTED="$(</tmp/selection)"
+    USE_PRIVILEGE "${BIN[sed]}" -i "s|^\s*#*${CFG_OPTN%:*}\s\+.*|${CFG_OPTN%:*} ${SELECTED}|g" "${BTLDRCFG}"
+    # Some places in the config file have commented-out examples.
+    # This script ends up changing them all the what the user set.
+    # While this doesn't affect anything functionality-wise, it
+    # doesn't look professional so let's clean it up.
+    USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|\(${CFG_OPTN%:*} ${SELECTED}\n\)\{2,\}|${CFG_OPTN%:*} ${SELECTED}\n|g" "${BTLDRCFG}"
+  done
+}
+
+function CONFIGURE_SYSTEMD_BOOT {
+  local CFG_OPTN EXISTCFG BTLDRCFG="${EFISPDIR}/loader/loader.conf"
+  local -ra LOOK_FOR=(default:select timeout:range console-mode:select editor:bool
+                      auto-entries:bool auto-firmware:bool random-seed-mode:select)
+
+  for CFG_OPTN in "${LOOK_FOR[@]}"; do
+    EXISTCFG="$("${BIN[grep]}" "^${CFG_OPTN%:*}" "${BTLDRCFG}" | ${BIN[sed]} 's/.*\s//g')"
+    HELP_MSG="$(GET_SYSTEMD_BOOT_OPTINFO "${CFG_OPTN%:*}")"
+    case "${CFG_OPTN#*:}" in
+      bool)
+        DIALOG_YESNO "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" \
+          && echo 'yes' > /tmp/selection || echo 'no' > /tmp/selection
+        ;;
+      text)
+        DIALOG_INPUT "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" "${EXISTCFG}" || return 1
+        ;;
+      select)
+        case "${CFG_OPTN%:*}" in
+          default)
+            IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${EFISPDIR}"/loader/entries -name '*.conf' | "${BIN[sed]}" 's|.*/||g' | "${BIN[sort]}")
+            IFS=$'\n' read -r -d '' -a DESCRIPS < <("${BIN[grep]}" '^title' "${EFISPDIR}"/loader/entries/*.conf | ${BIN[sort]} | "${BIN[sed]}" 's/.*title\s\+//g')
+            ;;
+          console-mode)
+            SUGGESTS=(0 1 2 auto max keep)
+            DESCRIPS=('Standard UEFI 80x25 mode'
+                      '80x50 mode, not supported by all devices'
+                      'First non-standard mode provided by the firmware, if any'
+                      'Pick a suitable mode automatically using heuristics'
+                      'Pick the highest-numbered available mode'
+                      'Keep the mode selected by firmware (the default)')
+            ;;
+          random-seed-mode)
+            SUGGESTS=(off with-system-token always)
+            DESCRIPS=('Never read ESP random seed, nor pass it to the OS'
+                      'Only read ESP random seed if LoaderSystemToken EFI var is set (default)'
+                      'Read random seed regardless if LoaderSystemToken EFI var is set')
+            ;;
+        esac
+        DIALOG_SINGLE_SELECT "${TITLEBAR}" "${CFG_OPTN%:*}" 'showtags' "${EXISTCFG}" \
+          "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
+        ;;
+      range)
+        DIALOG_RANGE "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" 0 60 2 || return 1
+        ;;
+    esac
+    SELECTED="$(</tmp/selection)"
+    USE_PRIVILEGE "${BIN[sed]}" -i "/${CFG_OPTN%:*}/d" "${BTLDRCFG}"
+    unset XTRATABS
+    [[ $(echo "${CFG_OPTN%:*}" | "${BIN[wc]}" -m) -lt 17 ]] && XTRATABS="\t"
+    [[ $(echo "${CFG_OPTN%:*}" | "${BIN[wc]}" -m) -lt 9 ]] && XTRATABS="\t\t"
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\t%s\n' '${CFG_OPTN%:*}${XTRATABS}' '${SELECTED}' >> '${BTLDRCFG}'"
+  done
+}
+
+function INSTALL_EFI_BOOT_ENTRY {
+  set -x
+  case "${SYSTEM[cpu-arch]}" in
+    *86)
+      case "${SYSTEM[fw-bits]}" in
+        64) SUFFIX='x64';;
+        32) SUFFIX='ia32';;
+      esac
+      ;;
+  esac
+  
+  case "${1}" in
+    refind)
+      EFI_PATH="/EFI/refind/refind_${SUFFIX}.efi"
+      BT_LABEL='rEFInd Boot Manager'
+      ;;
+    systemd-boot)
+      EFI_PATH="/EFI/systemd/systemd-boot${SUFFIX}.efi"
+      BT_LABEL='Linux Boot Manager'
+      ;;
+  esac
+
+  CURRENT="$("${BIN[efibootmgr]}" -v)"
+
+  shopt -s nocasematch
+  if ! [[ ${CURRENT} =~ ${BT_LABEL}.*${ESP_UUID}.*${EFI_PATH//\//\\\\} ]]; then
+    USE_PRIVILEGE "${BIN[efibootmgr]}" --quiet --create --disk "${ESP_DISK}" --part "${ESP_PART#p}" --loader "${EFI_PATH}" --label "${BT_LABEL}"
+  fi
+  shopt -u nocasematch
+  set +x
+}
+
+function INSTALL_EFI_TOOLS {
+  local BOOT_LDR="${1}"
+
+  if [[ -e ${OSCHROOT}/usr/share/edk2-shell ]]; then
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/ia32/Shell_Full.efi" "${EFISPDIR}/EFI/shellia32.efi"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/x64/Shell_Full.efi" "${EFISPDIR}/EFI/shellx64.efi"
+  elif  [[ -e ${OSCHROOT}/usr/uefi/edk2-shell ]]; then
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellia32_v2.efi" "${EFISPDIR}/EFI/shellia32.efi"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellx64_v2.efi" "${EFISPDIR}/EFI/shellx64.efi"
+  fi
+  if [[ -e ${OSCHROOT}/usr/lib/fwupd/efi/ ]]; then
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${EFISPDIR}/tools/"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/lib/fwupd/efi/fwupd"* "${EFISPDIR}/EFI/tools/"
+  fi
+  if [[ -e ${OSCHROOT}/usr/share/memtest86-efi ]]; then
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${EFISPDIR}/memtest86/"
+    [[ ${BOOT_LDR} == refind ]] && DEST_DIR="tools" || DEST_DIR="memtest86"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/memtest86-efi/"*.* "${EFISPDIR}/EFI/${DEST_DIR}/"
+  fi
+}
+
+function INSTALL_HOOK_REFIND {
+  if ! [[ -e ${OSCHROOT}/etc/pacman.d/hooks/refind.hook ]]; then
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${OSCHROOT}/etc/pacman.d/hooks"
+    USE_PRIVILEGE sh -c "'${BIN[cat]}' <<- ENDOFSCRIPT > ${OSCHROOT}/etc/pacman.d/hooks/refind.hook
+		[Trigger]
+		Type=Package
+		Operation=Upgrade
+		Target=systemd
+
+		[Action]
+		Description=Updating systemd-boot
+		When=PostTransaction
+		Exec=/usr/bin/bootctl update
+		ENDOFSCRIPT"
+  fi
+}
+
+function INSTALL_HOOK_SYSTEMDBOOT {
+  if ! [[ -e ${OSCHROOT}/etc/pacman.d/hooks/100-systemd-boot.hook ]]; then
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${OSCHROOT}/etc/pacman.d/hooks"
+    USE_PRIVILEGE sh -c "'${BIN[cat]}' <<- ENDOFSCRIPT > ${OSCHROOT}/etc/pacman.d/hooks/100-systemd-boot.hook
+		[Trigger]
+		Operation=Upgrade
+		Type=Package
+		Target=refind
+		
+		[Action]
+		Description=Updating rEFInd on ESP
+		When=PostTransaction
+		Exec=/usr/bin/refind-install
+		ENDOFSCRIPT"
+  fi
+}
+
+function INSTALL_REFIND {
+  local BTLDRESP="${EFISPDIR}/EFI/refind"
+  local BTLDRUSR="/usr/share/refind"
+  local LOCATION OUTPUTFN
+
+  ASK_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
+  LOCATION="$(</tmp/selection)"
+
+  USE_PRIVILEGE "${BIN[mkdir]}" -p "${EFISPDIR}"/EFI/{Boot,refind/icons,refind/fonts}
+
+  for FW in x64 ia32; do
+    if [[ -e ${OSCHROOT}${BTLDRUSR}/drivers_${FW} ]]; then
+      USE_PRIVILEGE "${BIN[mkdir]}" -p "${BTLDRESP}/drivers_${FW}"
+      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}${BTLDRUSR}/drivers_${FW}/"* "${BTLDRESP}/drivers_${FW}/"
+    fi
+    if [[ -e ${OSCHROOT}${BTLDRUSR}/refind_${FW}.efi ]]; then
+      [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${FW}.efi" || unset OUTPUTFN
+      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}${BTLDRUSR}/refind_${FW}.efi" "${LOCATION}/${OUTPUTFN}"
+    fi
+  done
+
+  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${BTLDRUSR}/refind.conf-sample" "${BTLDRESP}/refind.conf"
+  USE_PRIVILEGE "${BIN[cp]}" -rnp "${OSCHROOT}${BTLDRUSR}/icons/"* "${BTLDRESP}/icons/"
+  USE_PRIVILEGE "${BIN[cp]}" -rnp "${OSCHROOT}${BTLDRUSR}/fonts/"* "${BTLDRESP}/fonts/"
+
+  [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
+}
+
+function INSTALL_SYSTEMD_BOOT {
+  local BTLDRESP="${EFISPDIR}/EFI/systemd"
+  local BTLDRUSR="/usr/lib/systemd/boot"
+
+  ASK_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
+  LOCATION="$(</tmp/selection)"
+
+  USE_PRIVILEGE "${BIN[mkdir]}" -p "${EFISPDIR}"/EFI/{Boot,Linux,systemd} \
+    "${EFISPDIR}"/loader/entries
+
+  for FW in x64 ia32; do
+    if [[ -e ${OSCHROOT}${BTLDRUSR}/systemd-boot${FW}.efi ]]; then
+      [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${FW}.efi" || unset OUTPUTFN
+      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/${BTLDRUSR}/systemd-boot${FW}.efi" "${LOCATION}/${OUTPUTFN}"
+    fi
+  done
+
+  [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
+
+  [[ -e "${EFISPDIR}/loader/random-seed" ]] || \
+    USE_PRIVILEGE "${BIN[dd]}" if=/dev/random of="${EFISPDIR}/loader/random-seed" bs=512 count=1 > /dev/null 2>&1
+}
+
+function GENERATE_BOOT_STANZA {
+  local IMG_MTPT IMG_SBVL IMG_PATH IMG_VLID ROOTBDEV ROOTSPEC ROOTFLGS
+  local LUKS_DVC LUKSKCLP PLYMKCLP ADDLKCLP
+  local OSR_NAME OSR_VRSN OSR_OSID
+  local CPUMCODE MCODEIRD FULLPATH MIRD_IMG RIRD_IMG
+  local -a KRNTYPES KRN_IMGS MIR_IMGS RIR_IMGS
+  
+  IMG_MTPT="$(GET_BOOTLOADER_READABLE_PATH "${1}")"
+  IMG_SBVL="$("${BIN[mount]}" | "${BIN[grep]}" "${IMG_MTPT}" | "${BIN[grep]}" subvol | "${BIN[sed]}" 's/.*subvol=\(.*\),.*/\1/g')"
+  IMG_PATH="$(GET_IMAGES_PATH "${IMG_MTPT}")"
+  IMG_VLID="$(GET_VOLUME_ID "${IMG_MTPT}")"
+  ROOTBDEV="$(GET_ROOT_BLOCK_DEVICE)"
+  if [[ ${ROOTBDEV} =~ ^zfs ]]; then
+    ROOTSPEC="${ROOTBDEV}"
+  else
+    ROOTSPEC="$(GET_ROOT_KCL "${ROOTBDEV}")"
+    ROOTFLGS="rootflags=$(GET_KCL_ROOT_FLAGS)"
+  fi
+  if [[ ${ROOTBDEV} =~ /dev/mapper ]]; then
+    GET_PRIVILEGE
+    LUKS_DVC="$(USE_PRIVILEGE /sbin/cryptsetup status "${ROOTBDEV##*/}" | "${BIN[grep]}" 'device:' | "${BIN[sed]}" 's/.* //g')"
+    LUKSKCLP="$(GET_LUKS_KCL "${LUKS_DVC}"):${ROOTBDEV##*/}"
+    if [[ $(</proc/cmdline) =~ cryptkey ]]; then
+      if DIALOG_YESNO "${TITLEBAR}" "CryptKey" "Use cryptkey from kernel command line?"; then
+        LUKSKCLP+=" cryptkey=$("${BIN[sed]}" 's/.*cryptkey=\(.*\) \?/\1/g' /proc/cmdline)"
+      fi
+    fi
+  fi
+  
+  [[ -e ${OSCHROOT}/usr/share/plymouth ]] && \
+    PLYMKCLP="splash loglevel=3 rd.udev.log_priority=3 rd.systemd.show_status=auto vt.global_cursor_default=0"
+  
+  CHOOSE_KCL_OPTIONS || return 1
+  ADDLKCLP="rw $(</tmp/selection)"
+  ADDLKCLP="${ADDLKCLP//  / }"
+
+  OSR_NAME="$("${BIN[grep]}" '^NAME=' "${OSCHROOT}/etc/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
+  OSR_VRSN="$("${BIN[grep]}" '^VERSION=' "${OSCHROOT}/etc/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
+  OSR_OSID="$("${BIN[grep]}" '^ID=' "${OSCHROOT}/etc/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
+  [[ -z ${OS_VRSN} ]] && OSR_VRSN="$("${BIN[grep]}" '^VERSION_ID=' "${OSCHROOT}/usr/lib/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
+  [[ ${OSR_OSID} =~ '-' ]] && OSR_OSID="${OSR_OSID%-*}"
+
+  for CPUMCODE in amd-ucode.img intel-ucode.img; do
+    [[ -e ${IMG_MTPT}/${CPUMCODE} ]] && MCODEIRD+="${IMG_SBVL}${IMG_PATH}/${CPUMCODE} "
+  done
+  MCODEIRD=${MCODEIRD% }
+
+  for FULLPATH in "${IMG_MTPT}"/vmlinuz-linux*; do
+    KRNTYPES+=("${FULLPATH#*vmlinuz-linux}")
+    KRNTYPES[-1]="${KRNTYPES[-1]#-}"
+    KRNTYPES[-1]="${KRNTYPES[-1]/lts/LTS}"
+    KRN_IMGS+=("${IMG_SBVL}${IMG_PATH}${FULLPATH#${IMG_MTPT}}")
+    if [[ -e ${FULLPATH/vmlinuz/initramfs}.img ]]; then
+      MIRD_IMG="${KRN_IMGS[-1]/vmlinuz/initramfs}.img"
+    fi; if [[ -e ${FULLPATH/vmlinuz/initramfs}-fallback.img ]]; then
+      RIRD_IMG="${KRN_IMGS[-1]/vmlinuz/initramfs}-fallback.img"
+      [[ -z ${MIRD_IMG} ]] && MIRD_IMG="${RIRD_IMG}"
+    fi
+    [[ -z ${RIRD_IMG} ]] && RIRD_IMG="${MIRD_IMG}"
+    MIR_IMGS+=("${MIRD_IMG}")
+    RIR_IMGS+=("${RIRD_IMG}")
+  done
+
+  case "${1}" in
+    refind)
+      GENERATE_BOOT_STANZA_REFIND "${OSR_NAME}" "${OSR_VRSN}" "${OSR_OSID}" \
+        "${IMG_VLID}" 'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${ROOTSPEC}" \
+        "${ROOTFLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
+      ;;
+    systemd-boot)
+      GENERATE_BOOT_STANZA_SYSTEMD_BOOT "${OSR_NAME}" "${OSR_VRSN}" "${OSR_OSID}" \
+        "${IMG_VLID}" 'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${ROOTSPEC}" \
+        "${ROOTFLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
+      ;;
+  esac
+}
+
+function GENERATE_BOOT_STANZA_REFIND {
+  [[ -n "${1}" ]] && local OSR_NAME="${1}" || unset OSR_NAME
+  [[ -n "${2}" ]] && local OSR_VRSN="${2}" || unset OSR_VRSN
+  [[ -n "${3}" ]] && local OSR_OSID="${3}" || unset OSR_OSID
+  [[ -n "${4}" ]] && local IMG_VLID="${4}" || unset IMG_VLID
+  local -n KRNLTYPE="${5}"
+  local -n KRNLIMGS="${6}"
+  local -n MAINIRDS="${7}"
+  local -n RESCIRDS="${8}"
+  [[ -n "${9}"  ]] && local ROOTSPEC="${9}" || unset ROOTSPEC
+  [[ -n "${10}" ]] && local ROOTFLGS="${10}" || unset ROOTFLGS
+  [[ -n "${11}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
+  [[ -n "${12}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
+  [[ -n "${13}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
+  [[ -n "${14}" ]] && local MCODEIRD="initrd=${14}" && MCODEIRD="${MCODEIRD/ / initrd=}" || unset MCODEIRD
+  local CFG_FILE USETHEME BAKTITLE HELP_MSG DFLTSLCT SELECTED BTSTANZA EXSTANZA STNZATTL
+  local -a ASTANZAS SUGGESTS DESCRIPS
+  local -i LC
+
+  CFG_FILE="${EFISPDIR}/EFI/refind/refind.conf"
+  ASK_REFIND_THEME
+  USETHEME="/EFI/refind/$(</tmp/selection)/icons"
+  USETHEME="${USETHEME%/default}"
+
+  for (( LC=0 ; LC<${#KRNLIMGS[@]} ; LC++ )); do
+    BTSTANZA="menuentry \"${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNLTYPE+ }${KRNLTYPE^}\" {\n"
+    BTSTANZA+="\ticon\t${USETHEME}/os_${OSR_OSID}.png\n"
+    BTSTANZA+="\tvolume\t${IMG_VLID}\n"
+    BTSTANZA+="\tloader\t${KRNLIMGS[${LC}]}\n"
+    [[ -n ${MAINIRDS[${LC}]} ]] && BTSTANZA+="\tinitrd\t${MAINIRDS[${LC}]}\n"
+    BTSTANZA+="\toptions\t\"${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+    if [[ ${ADDLKCLP} =~ quiet ]]; then
+      STNZATTL='Verbose startup'
+      [[ -z ${PLMTHKCL} ]] && STNZATTL="${STNZATTL#V/No splash & v}"
+      BTSTANZA+="\tsubmenuentry \"${STNZATTL}\" {\n"
+      BTSTANZA+="\t\toptions\t\"${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+      BTSTANZA+="\t}\n"
+    fi
+    if [[ -e ${OSCHROOT}/etc/systemd/system/display-manager.service ]]; then
+      BTSTANZA+='\tsubmenuentry "Boot to CLI (no display manager) {\n'
+      BTSTANZA+="\t\toptions\t\"${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+      BTSTANZA+='\t}\n'
+    fi
+    if [[ ${MAINIRDS[${LC}]} != "${RESCIRDS[${LC}]}" ]] && [[ -n ${RESCIRDS[${LC}]} ]]; then
+      BTSTANZA+='\tsubmenuentry "Boot with fallback InitRAMFS" {\n'
+      BTSTANZA+="\t\tinitrd\t${RESCIRDS[${LC}]}\n"
+      BTSTANZA+="\t\toptions\t\"${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+      BTSTANZA+='\t}\n'
+    fi
+    BTSTANZA+='\tsubmenuentry "Boot to systemd rescue.target" {\n'
+    [[ -n ${RESCIRDS[${LC}]} ]] && BTSTANZA+="\t\tinitrd ${RESCIRDS[${LC}]}\n"
+    BTSTANZA+="\t\toptions\t\"${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}  systemd.unit=rescue.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+    BTSTANZA+='\t}\n'
+    BTSTANZA+='}'
+  done
+
+  IFS=$'\n' read -r -d '' -a ASTANZAS < <(GET_ACTIVE_STANZA_NAMES_REFIND)
+  DESCRIPS+=("${ASTANZAS[@]}" '[create new entry]')
+  for (( LC=0 ; LC<${#DESCRIPS[@]} ; LC++ )); do
+    SUGGESTS+=("${LC}")
+    if [[ ${DESCRIPS[${LC}]} == ${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNLTYPE+ }${KRNLTYPE^} ]]; then
+      DFLTSLCT="${LC}"
+    fi
+  done
+  [[ -z ${DFLTSLCT} ]] && DFLTSLCT="${LC}"
+
+  if [[ ${#SUGGESTS[@]} -gt 1 ]]; then
+    ##############################################################################
+    BAKTITLE="rEFInd Boot Entry Placement"
+    HELP_MSG="Select the entry to replace:"
+    ##############################################################################
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${DFLTSLCT}" \
+      "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
+    SELECTED="$(</tmp/selection)"
+    if [[ ${SELECTED} -eq ${SUGGESTS[-1]} ]]; then
+      unset SUGGESTS DESCRIPS
+      for (( LC=0 ; LC<${#ASTANZAS[@]} ; LC++ )); do
+        if [[ ${LC} -eq 0 ]]; then
+          DESCRIPS[${LC}]="Place first, before ${ASTANZAS[${LC}]}"
+        else
+          DESCRIPS[${LC}]="Place between ${ASTANZAS[$((LC-1))]} and ${ASTANZAS[${LC}]}"
+        fi
+        SUGGESTS+=("${LC}")
+      done
+      DESCRIPS[${LC}]="Place last, after ${ASTANZAS[$((LC-1))]}"
+      SUGGESTS+=("${LC}")
+  
+      ############################################################################
+      BAKTITLE="rEFInd Boot Entry Placement"
+      HELP_MSG="Select where to insert the new entry:"
+      ############################################################################
+      DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
+        "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
+      SELECTED="$(</tmp/selection)"
+  
+      if [[ ${SELECTED} -lt ${SUGGESTS[-1]} ]]; then
+        EXSTANZA="$(GET_ACTIVE_STANZA_REFIND "${ASTANZAS[${SELECTED}]}")"
+        EXSTANZA="${EXSTANZA//\\/\\\\}"
+        EXSTANZA="${EXSTANZA//$'\n'/\\n}"
+        EXSTANZA="${EXSTANZA//$'\t'/\\t}"
+        USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|${EXSTANZA}|${BTSTANZA}\n\n${EXSTANZA}|g" "${CFG_FILE}"
+      else
+        EXSTANZA="$(GET_ACTIVE_STANZA_REFIND "${ASTANZAS[$((SELECTED-1))]}")"
+        EXSTANZA="${EXSTANZA//\\/\\\\}"
+        EXSTANZA="${EXSTANZA//$'\n'/\\n}"
+        EXSTANZA="${EXSTANZA//$'\t'/\\t}"
+        USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|${EXSTANZA}|${EXSTANZA}\n\n${BTSTANZA}|g" "${CFG_FILE}"
+      fi
+  
+    else
+      EXSTANZA="$(GET_ACTIVE_STANZA_REFIND "${DESCRIPS[${SELECTED}]}")"
+      EXSTANZA="${EXSTANZA//\\/\\\\}"
+      EXSTANZA="${EXSTANZA//$'\n'/\\n}"
+      EXSTANZA="${EXSTANZA//$'\t'/\\t}"
+      USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|${EXSTANZA}|${BTSTANZA}|g" "${CFG_FILE}"
+    fi
+  else
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b||' '${BTSTANZA}' | tr '|' '\n' >> '${CFG_FILE}'"
+  fi
+}
+
+function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
+  [[ -n "${1}" ]] && local OSR_NAME="${1}" || unset OSR_NAME
+  [[ -n "${2}" ]] && local OSR_VRSN="${2}" || unset OSR_VRSN
+  [[ -n "${3}" ]] && local OSR_OSID="${3}" || unset OSR_OSID
+  [[ -n "${4}" ]] && local IMG_VLID="${4}" || unset IMG_VLID
+  local -n KRNLTYPE="${5}"
+  local -n KRNLIMGS="${6}"
+  local -n MAINIRDS="${7}"
+  local -n RESCIRDS="${8}"
+  [[ -n "${9}"  ]] && local ROOTSPEC="${9}" || unset ROOTSPEC
+  [[ -n "${10}" ]] && local ROOTFLGS="${10}" || unset ROOTFLGS
+  [[ -n "${11}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
+  [[ -n "${12}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
+  [[ -n "${13}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
+  [[ -n "${14}" ]] && local MCODEIRD="initrd\t${14}" && MCODEIRD="${MCODEIRD/ /\\ninitrd\\n}" || unset MCODEIRD
+  local CFG_FILE BAKTITLE HELP_MSG SELECTED BTSTANZA EXSTANZA STNZATTL
+  local -a ASTANZAS SUGGESTS DESCRIPS DISP_MGR SAME_IRD
+  local -i LC
+
+  CNFG_DIR="${EFISPDIR}/loader/entries"
+  DISP_MGR="${OSCHROOT}/etc/systemd/system/display-manager.service"
+  [[ ${MAINIRDS[${LC}]} == "${RESCIRDS[${LC}]}" ]] && SAME_IRD=true || SAME_IRD=false
+
+  for (( LC=0 ; LC<${#KRNLIMGS[@]} ; LC++ )); do
+    for CFG_TYPE in common gabby nogui oops rescue; do
+      [[ ! -e ${DISP_MGR} ]] && [[ ${CFG_TYPE} == nogui ]] && continue
+      [[ ! ${ADDLKCLP} =~ quiet ]] && [[ ${CFG_TYPE} == verbose ]] && continue
+      [[ -z ${RESCIRDS[${LC}]} ]] || [[ ${CFG_TYPE} == oops ]] && ${SAME_IRD} && continue
+      case "${CFG_TYPE}" in
+        common) TCFGTYPE="Normal";;
+         gabby) [[ -z ${PLMTHKCL} ]] && TCFGTYPE="Verbose" || TCFGTYPE="No Splash & Verbose";;
+         nogui) TCFGTYPE="CLI";;
+          oops) TCFGTYPE="Fallback";;
+        rescue) TCFGTYPE="Rescue";;
+      esac
+      BTSTANZA="title\t${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNLTYPE+ }${KRNLTYPE^} ${TCFGTYPE}\n"
+      BTSTANZA+="linux\t${KRNLIMGS[${LC}]}\n"
+      [[ -n ${MCODEIRD} ]] && BTSTANZA+="${MCODEIRD}\n"
+      case "${CFG_TYPE}" in
+        common|gabby|nogui)
+          [[ -n ${MAINIRDS[${LC}]} ]] && BTSTANZA+="initrd\t${MAINIRDS[${LC}]}\n";;
+        oops|rescue)
+          [[ -n ${RESCIRDS[${LC}]} ]] && BTSTANZA+="initrd\t${RESCIRDS[${LC}]}\n";;
+      esac
+      case "${CFG_TYPE}" in
+        common)
+          BTSTANZA+="options\t${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}\n";;
+        gabby|oops)
+          BTSTANZA+="options\t${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP}\n";;
+        nogui)
+          BTSTANZA+="options\t${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target\n";;
+        rescue)
+          BTSTANZA+="options\t${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target\n";;
+      esac
+      USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/${OSR_OSID}-${KRNLTYPE,,}-${CFG_TYPE}.conf'"
+    done
+  done
+
+  if [[ -e ${EFISPDIR}/EFI/tools/fwupdx64.efi ]]; then
+    BTSTANZA="title\tFirmware Update\n"
+    BTSTANZA+="efi\t/EFI/tools/fwupdx64.efi\n"
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-fwupdate.conf'"
+  fi
+
+  if [[ -e ${EFISPDIR}/EFI/memtest86/memtest86.efi ]]; then
+    BTSTANZA="title\tMemTest86\n"
+    BTSTANZA+="efi\t/EFI/memtest86/memtest86.efi"
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-memtest86.conf'"
+  elif [[ -e ${EFISPDIR}/EFI/tools/memtest86.efi ]]; then
+    BTSTANZA="title\tMemTest86\n"
+    BTSTANZA+="efi\t/EFI/tools/memtest86.efi"
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-memtest86.conf'"
+  fi
+}
+
+function SELECT_BOOTLOADER {
+  #######################################################################
+  local -r BAKTITLE="Bootloader Selection"
+  local -r HELP_MSG="Select the boot loader to configure and install:"
+  #######################################################################
+  local SUGGESTS DESCRIPS
+
+  if [[ -e ${OSCHROOT}/usr/sbin/grub-mkconfig ]]; then
+    SUGGESTS+=(grub2)
+    DESCRIPS+=('GNU GRand Unified Bootloader 2')
+  fi; if [[ -e ${OSCHROOT}/usr/sbin/refind-install ]]; then
+    SUGGESTS+=(refind)
+    DESCRIPS+=('An EFI boot manager forked from rEFIt')
+  fi; if [[ -e ${OSCHROOT}/usr/bin/syslinux ]]; then
+    SUGGESTS+=(syslinux)
+    DESCRIPS+=('Suite of lightweight boot loaders')
+  fi; if [[ -e ${OSCHROOT}/usr/bin/bootctl ]]; then
+    SUGGESTS+=(systemd-boot)
+    DESCRIPS+=('An EFI boot loader included with systemd')
+  fi
+
+  DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' '' \
+    "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'Exit' || return 1
+}
+
+MOUNTPNT="$(GET_ESP_MOUNTPOINT)"
+
+[[ -z ${MOUNTPNT} ]] && echo 'No EFI System Partition found on this machine' && exit 1
+[[ ${MOUNTPNT} =~ [[:blank:]] ]] && echo 'Multiple ESP mount points found.' && exit 1
+
+EFISPDIR="${MOUNTPNT}"
+ESP_BDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${EFISPDIR} type" | "${BIN[cut]}" -d\  -f1)"
+ESP_DISK="/dev/$("${BIN[lsblk]}" -lno NAME,PKNAME | "${BIN[grep]}" "${ESP_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+ESP_PART="${ESP_BDEV##${ESP_DISK}}"
+ESP_UUID="$("${BIN[lsblk]}" -lno NAME,PARTUUID | "${BIN[grep]}" "${ESP_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+#ESP_PLBL="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${ESP_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+
+while true; do
+  SELECT_BOOTLOADER || break
+  case "$(</tmp/selection)" in
+    grub2)
+      DIALOG_MSGBOX "${TITLEBAR}" 'GRUB 2' 'Not implemented yet'
+      ;;
+    refind)
+      INSTALL_REFIND && \
+      INSTALL_EFI_TOOLS refind && \
+      INSTALL_HOOK_REFIND && \
+      GENERATE_BOOT_STANZA refind && \
+      CONFIGURE_REFIND
+      ;;
+    syslinux)
+      DIALOG_MSGBOX "${TITLEBAR}" 'SysLinux' 'Not implemented yet'
+      ;;
+    systemd-boot)
+      INSTALL_SYSTEMD_BOOT && \
+      INSTALL_EFI_TOOLS systemd-boot && \
+      INSTALL_HOOK_SYSTEMDBOOT && \
+      GENERATE_BOOT_STANZA systemd-boot && \
+      CONFIGURE_SYSTEMD_BOOT
+      ;;
+  esac
+done
+
+exit 0

@@ -60,3 +60,17 @@ STATUS: Nearly complete -- all base functionality present except running mkinitc
 The overview menu will show the configuration status of these, but
 there's no function yet to actually change the configuration.
 
+## `ai-boot`
+Configures the bootloader of the new system
+
+STATUS: Work in progress.
+
+| Firmware | Bootloader   | Installation | Tools | Hook | Configure | Stanza |
+|:--------:|:------------:|:------------:|:-----:|:----:|:---------:|:------:|
+| UEFI     | GRUB 2       |❌|❌|❌|❌|❌|
+| UEFI     | rEFInd       |✔|✔|✔|✔|✔|
+| UEFI     | SysLinux     |❌|❌|❌|❌|❌|
+| UEFI     | systemd-boot |✔|✔|✔|✔|✔|
+| BIOS     | GRUB 2       |❌|❌|❌|❌|❌|
+| BIOS     | SysLinux     |❌|❌|❌|❌|❌|
+
