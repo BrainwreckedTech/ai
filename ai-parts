@@ -422,6 +422,7 @@ function SET_SWAP_SPACE_OLD {
 }
 
 function SET_SWAP_SPACE {
+  [[ ${PHCONFIG[swap-cfg]} == pagefile ]] && return 0
   ##############################################################################
   local BAKTITLE="Swap Size"
   local HELP_MSG="Set the size of the swap/pagefile partition(s):"
