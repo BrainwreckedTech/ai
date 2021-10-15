@@ -566,7 +566,7 @@ function INSTALL_DIRECTORY {
   local -r BAKTITLE="OS Mount Location"
   local -r HELP_MSG="Where is the OS root filessystem mounted?"
   ##############################################################################
-  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt
+  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt || return "${?}"
   MOUNTPNT="$(</tmp/selection)"
 }
 
@@ -627,6 +627,7 @@ function INTENTS_DESKTOP {
     budgie|cinnamon|gnome|lxde|mate|xfce) INTENTS[guitk]+='gtk';;
                       deepin|lxqt|plasma) INTENTS[guitk]+='qt';;
   esac
+  return 0
 }
 
 function INTENTS_GUI_TOOLKIT {
@@ -726,6 +727,7 @@ function OPTION_ENTROPY {
   ##############################################################################
   DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
     && PACKAGES[optional]+='rng-tools '
+  return 0
 }
 
 function OPTION_NEOFETCH {
@@ -735,6 +737,7 @@ function OPTION_NEOFETCH {
   ##############################################################################
   DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
     && PACKAGES[optional]+='neofetch '
+  return 0
 }
 
 function OPTION_PLYMOUTH {
@@ -753,6 +756,7 @@ function OPTION_PLYMOUTH {
       IS_REPO_PKG 'gdm-plymouth' && PACKAGES[dispmngr]='gdm-plymouth'
     fi
   fi
+  return 0
 }
 
 function OPTION_SCRIPT_DEBUGGING {
@@ -762,6 +766,7 @@ function OPTION_SCRIPT_DEBUGGING {
   ##############################################################################
   DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
     && PACKAGES[optional]+='shellcheck '
+  return 0
 }
 
 function OPTION_STEAM {
@@ -783,6 +788,7 @@ function OPTION_STEAM {
     [[ -z ${PACKAGES[netmngr]} ]] && PACKAGES[steam]+=' lib32-systemd'
     IS_REPO_PKG 'steamtinkerlaunch' && PACKAGES[steam]+=' steamtinkerlaunch'
   fi
+  return 0
 }
 
 function OPTION_THUMBNAILERS {
@@ -794,6 +800,7 @@ function OPTION_THUMBNAILERS {
   ##############################################################################
   DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
     && PACKAGES[thumbs]="${THUMBERS}"
+  return 0
 }
 
 function OPTION_TIME_SYNC {
@@ -805,6 +812,7 @@ function OPTION_TIME_SYNC {
   ##############################################################################
   DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" \
     || PACKAGES[lansrvcs]="$("${BIN[xargs]}" <<< "${PACKAGES[lansrvcs]} ntp")"
+  return 0
 }
 
 function PACKAGESEL_AUR {
@@ -895,6 +903,7 @@ function PACKAGESEL_BOOT_LOADER {
 
   SELECTED="$(</tmp/selection)"
   [[ systemd-boot,none =~ ${SELECTED} ]] || PACKAGES[bootload]="${SELECTED}"
+  return 0
 }
 
 function PACKAGESEL_BOOT_TOOLS {
@@ -999,6 +1008,7 @@ function PACKAGESEL_BROWSERS {
       "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return "${?}"
     PACKAGES[browsers]="$("${BIN[xargs]}" <<< "${PACKAGES[browsers]} $(</tmp/selection)")"
   fi
+  return 0
 }
 
 function PACKAGESEL_CERTBOT {
@@ -1006,6 +1016,7 @@ function PACKAGESEL_CERTBOT {
     apache) PACKAGES[certbot]='certbot-apache';;
      nginx) PACKAGES[certbot]='certbot-nginx';;
   esac
+  return 0
 }
 
 function PACKAGESEL_CPU_MICROCODE {
@@ -1237,6 +1248,7 @@ function PACKAGESEL_DESKTOP {
       "${HELP_MSG}" 'AUR_REPO' 'AUR_DSCS' 'SELSTATE'
     PACKAGES[dechoice]="$("${BIN[xargs]}" <<< "${PACKAGES[dechoice]} $(</tmp/selection)")"
   fi
+  return 0
 }
 
 function PACKAGESEL_DISK_MANAGEMENT {
@@ -1307,6 +1319,7 @@ function PACKAGESEL_DISPLAY_MANAGER {
       xdm) PACKAGES[dispmngr]+=' xdm-archlinux';;
     esac
   fi
+  return 0
 }
 
 function PACKAGESEL_EMAIL_CLIENT {
@@ -1341,6 +1354,7 @@ function PACKAGESEL_EMAIL_CLIENT {
   PACKAGES[mailclnt]+="$(</tmp/selection)"
 
   [[ ${PACKAGES[mailclnt]} == kmail ]] && PACKAGES[mailclnt]+=' kmail-account-wizard'
+  return 0
 }
 
 function PACKAGESEL_EMAIL_SERVER {
@@ -1611,6 +1625,7 @@ function PACKAGESEL_KERNEL {
 
   PACKAGES[kernel]="$(</tmp/selection)"
   [[ ${INTENTS[runtime]} == hardware ]] && PACKAGES[kernel]+=" linux-firmware"
+  return 0
 }
 
 function PACKAGESEL_KERNEL_NONFREE_MODULES {
@@ -1945,6 +1960,7 @@ function PACKAGESEL_NETWORK_MANAGER {
       [[ ${INTENTS[guitk]} =~ gtk ]] && PACKAGES[netmngr]+=" network-manager-applet"
       ;;
   esac
+  return 0
 }
 
 function PACKAGESEL_NETWORK_TOOLS {
@@ -2059,6 +2075,7 @@ function PACKAGESEL_PIPEWIRE {
     [[ ${INTENTS[guitk]} == gtk ]] && PACKAGES[pipewire]+=' xdg-desktop-portal-gtk'
     [[ ${INTENTS[guitk]} == qt ]] && PACKAGES[pipewire]+=' xdg-desktop-portal-kde'
   fi
+  return 0
 }
 
 function PACKAGESEL_REDIS {
@@ -2081,6 +2098,7 @@ function PACKAGESEL_TERMINAL_MULTIPLEXER {
 
   SELECTED="$(</tmp/selection)"
   [[ ${SELECTED} != none ]] && PACKAGES[termulti]+="${SELECTED}"
+  return 0
 }
 
 function PACKAGESEL_TEXT_EDITOR_ADVANCED {
@@ -2163,6 +2181,7 @@ function PACKAGESEL_TPM_SUPPORT {
 
   [[ ${TPM_SLCT} == tpm-1.2 ]] && PACKAGES[tpm]+='trousers'
   [[ ${TPM_SLCT} == tpm-2.0 ]] && PACKAGES[tpm]+='tpm2-abrmd tpm2-tools'
+  return 0
 }
 
 function PACKAGESEL_WEB_SERVER {
@@ -2470,83 +2489,98 @@ function PACKAGESEL_ADDITIONAL {
   done <<< "$(sed 's/\t\t*/\t/g' packages)"
 }
 
+function VERIFY_EXIT {
+  ##############################################################################
+  local -r BAKTITLE="Verify Exit"
+  local -r HELP_MSG="Do you want to exit setup?"
+  ##############################################################################
+  DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" && exit 0
+}
+
 function WIZARD_MODE {
   UPDATE_PACMAN_MIRRORLIST
-  INSTALL_DIRECTORY
-  INTENTS_PURPOSE	# desktop, server, rescue
-  INTENTS_RUNTIME	# hardware, virtual, container
+  INSTALL_DIRECTORY || VERIFY_EXIT # don't trap -- alow cancel to mean "use /"
+  until INTENTS_PURPOSE; do VERIFY_EXIT; done # desktop, server, rescue
+  until INTENTS_RUNTIME; do VERIFY_EXIT; done # hardware, virtual, container
   if [[ ${INTENTS[runtime]} != container ]]; then
     if [[ rescue,server =~ ${INTENTS[purpose]} ]] \
     || [[ ${INTENTS[runtime]} == virtual ]]; then
-      OPTION_ENTROPY
+      until OPTION_ENTROPY; do VERIFY_EXIT; done
     fi
-    PACKAGESEL_KERNEL
-    PACKAGESEL_KERNEL_NONFREE_MODULES
-    PACKAGESEL_INITRAMFS_GEN
-    PACKAGESEL_BOOT_LOADER
-    PACKAGESEL_BOOT_TOOLS
-    [[ ${INTENTS[runtime]} != virtual ]] && PACKAGESEL_CPU_MICROCODE
-    PACKAGESEL_TPM_SUPPORT
-    PACKAGESEL_HARDWARE_REPORTING
-    [[ ${INTENTS[runtime]} != virtual ]] && PACKAGESEL_HARDWARE_SUPPORT
-    PACKAGESEL_DISK_MANAGEMENT
-    PACKAGESEL_NETWORK_DIAGNOSTICS
-    PACKAGESEL_NETWORK_TOOLS
-    OPTION_TIME_SYNC
-    PACKAGESEL_FILESYSTEMS_NATIVE
-    PACKAGESEL_FILESYSTEMS_OTHER
+    until PACKAGESEL_KERNEL; do VERIFY_EXIT; done
+    until PACKAGESEL_KERNEL_NONFREE_MODULES; do VERIFY_EXIT; done
+    until PACKAGESEL_INITRAMFS_GEN; do VERIFY_EXIT; done
+    until PACKAGESEL_BOOT_LOADER; do VERIFY_EXIT; done
+    until PACKAGESEL_BOOT_TOOLS; do VERIFY_EXIT; done
+    [[ ${INTENTS[runtime]} != virtual ]] \
+      && until PACKAGESEL_CPU_MICROCODE; do VERIFY_EXIT; done
+    until PACKAGESEL_TPM_SUPPORT ; do VERIFY_EXIT; done
+    until PACKAGESEL_HARDWARE_REPORTING; do VERIFY_EXIT; done
+    [[ ${INTENTS[runtime]} != virtual ]] \
+      && until PACKAGESEL_HARDWARE_SUPPORT; do VERIFY_EXIT; done
+    until PACKAGESEL_DISK_MANAGEMENT; do VERIFY_EXIT; done
+    until PACKAGESEL_NETWORK_DIAGNOSTICS; do VERIFY_EXIT; done
+    until PACKAGESEL_NETWORK_TOOLS; do VERIFY_EXIT; done
+    until OPTION_TIME_SYNC; do VERIFY_EXIT; done
+    until PACKAGESEL_FILESYSTEMS_NATIVE; do VERIFY_EXIT; done
+    until PACKAGESEL_FILESYSTEMS_OTHER; do VERIFY_EXIT; done
   fi
 
-  PACKAGESEL_MANPAGES
-  PACKAGESEL_TERMINAL_MULTIPLEXER
-  OPTION_SCRIPT_DEBUGGING
-  OPTION_NEOFETCH
-  PACKAGESEL_ZSH
-  PACKAGESEL_AUR
-  PACKAGESEL_ADDITIONAL
+  until PACKAGESEL_MANPAGES; do VERIFY_EXIT; done
+  until PACKAGESEL_TERMINAL_MULTIPLEXER; do VERIFY_EXIT; done
+  until OPTION_SCRIPT_DEBUGGING; do VERIFY_EXIT; done
+  until OPTION_NEOFETCH; do VERIFY_EXIT; done
+  until PACKAGESEL_ZSH; do VERIFY_EXIT; done
+  until PACKAGESEL_AUR; do VERIFY_EXIT; done
+  until PACKAGESEL_ADDITIONAL; do VERIFY_EXIT; done
 
-  [[ ${INTENTS[purpose]} == server ]] && INTENTS_SERVERS
-  [[ ${INTENTS[servers]} =~ email ]] && PACKAGESEL_EMAIL_SERVER
-  [[ ${INTENTS[servers]} =~ file ]] && PACKAGESEL_FILE_SERVER
-  [[ ${INTENTS[servers]} =~ lan ]] && PACKAGESEL_LAN_SERVICES
-  [[ ${INTENTS[servers]} =~ media ]] && PACKAGESEL_MEDIA_SERVER
-  [[ ${INTENTS[servers]} =~ web ]] && \
-    PACKAGESEL_WEB_SERVER && INTENTS_WEBSRVR_COMPONENTS
-  [[ ${INTENTS[servers]} =~ certbot ]] && PACKAGESEL_CERTBOT
-  [[ ${INTENTS[servers]} =~ redis ]] && PACKAGESEL_REDIS
-  [[ ${INTENTS[servers]} =~ php ]] && \
-    PACKAGESEL_PHP_WEBSRVR_IFACE && PACKAGESEL_PHP_MODULES
-  [[ ${INTENTS[servers]} =~ database ]] && PACKAGESEL_DATABASE_SERVER
+  [[ ${INTENTS[purpose]} == server ]] && until INTENTS_SERVERS; do VERIFY_EXIT; done
+  [[ ${INTENTS[servers]} =~ email ]] && until PACKAGESEL_EMAIL_SERVER; do VERIFY_EXIT; done
+  [[ ${INTENTS[servers]} =~ file ]] && until PACKAGESEL_FILE_SERVER; do VERIFY_EXIT; done
+  [[ ${INTENTS[servers]} =~ lan ]] && until PACKAGESEL_LAN_SERVICES; do VERIFY_EXIT; done
+  [[ ${INTENTS[servers]} =~ media ]] && until PACKAGESEL_MEDIA_SERVER; do VERIFY_EXIT; done
+  if [[ ${INTENTS[servers]} =~ web ]]; then
+    until PACKAGESEL_WEB_SERVER; do VERIFY_EXIT; done
+    until INTENTS_WEBSRVR_COMPONENTS; do VERIFY_EXIT; done
+  fi
+  [[ ${INTENTS[servers]} =~ certbot ]] && until PACKAGESEL_CERTBOT; do VERIFY_EXIT; done
+  [[ ${INTENTS[servers]} =~ redis ]] && until PACKAGESEL_REDIS; do VERIFY_EXIT; done
+  if [[ ${INTENTS[servers]} =~ php ]]; then
+    until PACKAGESEL_PHP_WEBSRVR_IFACE; do VERIFY_EXIT; done
+    until PACKAGESEL_PHP_MODULES; do VERIFY_EXIT; done
+  fi
+  [[ ${INTENTS[servers]} =~ database ]] && until PACKAGESEL_DATABASE_SERVER; do VERIFY_EXIT; done
 
-  PACKAGESEL_XORG
+  until PACKAGESEL_XORG; do VERIFY_EXIT; done
 
   if [[ ${PACKAGES[xorg]} =~ xorg ]]; then
-    PACKAGESEL_XORG_GPU
-    INTENTS_DESKTOP
-    [[ -z ${INTENTS[guitk]} ]] && INTENTS_GUI_TOOLKIT
-    PACKAGESEL_DESKTOP
-    PACKAGESEL_DISPLAY_MANAGER
-    OPTION_PLYMOUTH
-    PACKAGESEL_GSTREAMER
-    [[ ${INTENTS[guitk]} == gtk ]] && PACKAGESEL_GVFS
-    OPTION_THUMBNAILERS
-    PACKAGESEL_OFFICE_SUITE
-    PACKAGESEL_LANGUAGE_HYPHENATION
-    PACKAGESEL_LANGUAGE_SPELLCHECK
-    PACKAGESEL_LANGUAGE_THESAURUS
-    INTENTS_BROWSERS
-    PACKAGESEL_BROWSERS
-    PACKAGESEL_EMAIL_CLIENT
-    PACKAGESEL_PIPEWIRE
-    PACKAGESEL_MEDIA_PLAYER
-    PACKAGESEL_TEXT_EDITOR_ADVANCED
-    OPTION_STEAM
-    PACKAGESEL_MISC_GUI
+    until PACKAGESEL_XORG_GPU; do VERIFY_EXIT; done
+    until INTENTS_DESKTOP; do VERIFY_EXIT; done
+    [[ -z ${INTENTS[guitk]} ]] && until INTENTS_GUI_TOOLKIT; do VERIFY_EXIT; done
+    until PACKAGESEL_DESKTOP; do VERIFY_EXIT; done
+    until PACKAGESEL_DISPLAY_MANAGER; do VERIFY_EXIT; done
+    until OPTION_PLYMOUTH; do VERIFY_EXIT; done
+    until PACKAGESEL_GSTREAMER; do VERIFY_EXIT; done
+    [[ ${INTENTS[guitk]} == gtk ]] && until PACKAGESEL_GVFS; do VERIFY_EXIT; done
+    until OPTION_THUMBNAILERS; do VERIFY_EXIT; done
+    until PACKAGESEL_OFFICE_SUITE; do VERIFY_EXIT; done
+    until PACKAGESEL_LANGUAGE_HYPHENATION; do VERIFY_EXIT; done
+    until PACKAGESEL_LANGUAGE_SPELLCHECK; do VERIFY_EXIT; done
+    until PACKAGESEL_LANGUAGE_THESAURUS; do VERIFY_EXIT; done
+    until INTENTS_BROWSERS; do VERIFY_EXIT; done
+    until PACKAGESEL_BROWSERS; do VERIFY_EXIT; done
+    until PACKAGESEL_EMAIL_CLIENT; do VERIFY_EXIT; done
+    until PACKAGESEL_PIPEWIRE; do VERIFY_EXIT; done
+    until PACKAGESEL_MEDIA_PLAYER; do VERIFY_EXIT; done
+    until PACKAGESEL_TEXT_EDITOR_ADVANCED; do VERIFY_EXIT; done
+    until OPTION_STEAM; do VERIFY_EXIT; done
+    until PACKAGESEL_MISC_GUI; do VERIFY_EXIT; done
   fi
 
   # This is placed here since the choice of desktop
   # environment can influence the choice of network manager
-  [[ ${INTENTS[runtime]} != container ]] && PACKAGESEL_NETWORK_MANAGER
+  [[ ${INTENTS[runtime]} != container ]] \
+    && until PACKAGESEL_NETWORK_MANAGER; do VERIFY_EXIT; done
 }
 
 function REVIEW_MODE {
