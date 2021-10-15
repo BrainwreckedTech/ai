@@ -94,7 +94,7 @@ function GET_PARTITION_LAYOUT {
       PTLAYOUT+="EFI_SystemPart efisp ${PHCONFIG[esp-size]}"$'\n'
     fi; if [[ ${PHCONFIG[xbl-size]} -gt 0 ]] && [[ ${PHCONFIG[boot-os]} =~ linux ]]; then
       PTLAYOUT+="Ext_BootLoader xbldr ${PHCONFIG[xbl-size]}"$'\n'
-    fi; if [[ ${PHCONFIG[msr-size]} -ge 128 ]]; then
+    fi; if [[ ${PHCONFIG[msr-size]} -ge 16 ]] && [[ ${PHCONFIG[boot-os]} =~ windows ]]; then
       PTLAYOUT+="Microsoft_RSVP rsvp ${PHCONFIG[msr-size]}"$'\n'
     fi
   fi
