@@ -2477,8 +2477,10 @@ function WIZARD_MODE {
   INTENTS_PURPOSE	# desktop, server, rescue
   INTENTS_RUNTIME	# hardware, virtual, container
   if [[ ${INTENTS[runtime]} != container ]]; then
-    [[ rescue,server =~ ${INTENTS[purpose]} ]] && OPTION_ENTROPY
-    [[ ${INTENTS[runtime]} == virtual ]] && OPTION_ENTROPY
+    if [[ rescue,server =~ ${INTENTS[purpose]} ]] \
+    || [[ ${INTENTS[runtime]} == virtual ]]; then
+      OPTION_ENTROPY
+    fi
     PACKAGESEL_KERNEL
     PACKAGESEL_KERNEL_NONFREE_MODULES
     PACKAGESEL_INITRAMFS_GEN
