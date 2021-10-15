@@ -431,6 +431,23 @@ function FINALIZE {
       done | "${BIN[dialog]}" --title "${MAIN_TTL}" --backtitle "${BACK_TTL}" --guage '' "${DLG_HIGH}" "${DLG_WIDE}";;
   esac
 
+
+  # This section puts the non-standard parition UUIDs used back to standard ones.
+  if [[ "$("${BIN[lsblk]}" -lno NAME,PTTYPE | "${BIN[grep]}" "${DEV_NAME} " | "${BIN[sed]}" 's/.* //g')" == gpt ]]; then
+    for THISPART in ${PT_NAMES}; do
+      case "${PRT_TYPE[${THISPART}]}" in
+        paging) CHANGETO="$(GET_PARTITION_ID basic)";;
+        rescue) CHANGETO="$(GET_PARTITION_ID linux)";;
+             *) unset CHANGETO
+      esac
+      if [[ -n ${CHANGETO} ]]; then
+        PART_NUM="${THISPART#${DEV_NAME}}"
+        PART_NUM="${PART_NUM#p}"
+        "${BIN[sudo]}" "${BIN[sfdisk]}" --part-type /dev/"${DEV_NAME}" "${PART_NUM}" "${CHANGETO}"
+      fi
+    done
+  fi
+
   # Change permissions on the debug output so it can be deleted as a regular user
   # later.  This is in case the user AFKs long enough to lose sudo authentication.
   "${BIN[sudo]}" chown "$("${BIN[id]}" -un):$("${BIN[id]}" -gn)" /tmp/ph-debug
