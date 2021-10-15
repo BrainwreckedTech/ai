@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source ai-funcs
+source "${0%/*}/ai-funcs"
 
 declare -r TITLEBAR="AI PARTITIONS"
 declare -i DLG_HIGH DLG_WIDE LST_HIGH

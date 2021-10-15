@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source ai-funcs
+source "${0%/*}/ai-funcs"
 
 ################################################################################
 # Here are more global variables to share amongst functions
