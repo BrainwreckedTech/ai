@@ -90,7 +90,7 @@ function GET_PARTITION_LAYOUT {
 
   # Conditions for GPT-specific ESP, XBL, and MSR
   if [[ ${PHCONFIG[part-tbl]} == gpt ]]; then
-    if [[ ${PHCONFIG[esp-size]} -ge 100 ]]; then
+    if [[ ${PHCONFIG[esp-size]} -ge 32 ]]; then
       PTLAYOUT+="EFI_SystemPart efisp ${PHCONFIG[esp-size]}"$'\n'
     fi; if [[ ${PHCONFIG[xbl-size]} -gt 0 ]] && [[ ${PHCONFIG[boot-os]} =~ linux ]]; then
       PTLAYOUT+="Ext_BootLoader xbldr ${PHCONFIG[xbl-size]}"$'\n'
