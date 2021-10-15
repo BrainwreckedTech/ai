@@ -1237,7 +1237,6 @@ function PACKAGESEL_DESKTOP {
       "${HELP_MSG}" 'AUR_REPO' 'AUR_DSCS' 'SELSTATE'
     PACKAGES[dechoice]="$("${BIN[xargs]}" <<< "${PACKAGES[dechoice]} $(</tmp/selection)")"
   fi
-
 }
 
 function PACKAGESEL_DISK_MANAGEMENT {
@@ -1876,7 +1875,6 @@ function PACKAGESEL_MISC_GUI {
     PACKAGES[miscgui]+=' realtime-privileges'
     [[ ${INTENTS[guitk]} == qt ]] && PACKAGES[miscgui]+=' qt5-svg'
   fi
-
 }
 
 function PACKAGESEL_NETWORK_DIAGNOSTICS {
