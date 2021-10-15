@@ -151,7 +151,8 @@ function GET_REMAINS_FOR_OSES {
   if [[ ${PHCONFIG[part-tbl]} == gpt ]]; then
     [[ ${PHCONFIG[esp-size]} -gt 0 ]] && ((REMAINS-=${PHCONFIG[esp-size]}))
     [[ ${PHCONFIG[xbl-size]} -gt 0 ]] && ((REMAINS-=${PHCONFIG[xbl-size]}))
-    [[ ${PHCONFIG[msr-size]} -gt 0 ]] && ((REMAINS-=${PHCONFIG[msr-size]}))
+    [[ ${PHCONFIG[boot-os]} =~ windows ]] && \
+      [[ ${PHCONFIG[msr-size]} -gt 0 ]] && ((REMAINS-=${PHCONFIG[msr-size]}))
   fi
   if [[ ${PHCONFIG[boot-os]} =~ windows ]]; then
     [[ ${PHCONFIG[wre-size]} -gt 0 ]] && ((REMAINS-=${PHCONFIG[wre-size]}))
