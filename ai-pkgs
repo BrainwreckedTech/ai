@@ -2584,9 +2584,9 @@ function REVIEW_MODE {
         until sh ~/ainstall.sh; do
           "${BIN[printf]}" 'Installation failed.  Retry? [Y/n] '
           read -rn1 TRYAGAIN
-          [[ ${TRYAGAIN,,} == n ]] && true || { unset TRYAGAIN; false; }
+          [[ ${TRYAGAIN,,} == n ]] && break
         done
-        [[ -z ${TRYAGAIN} ]] && rm ~/ainstall.sh
+        [[ ${TRYAGAIN,,} != n ]] && rm ~/ainstall.sh
         exit
         ;;
     esac
