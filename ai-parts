@@ -390,37 +390,6 @@ function SELECT_SWAP_CONFIG {
   PHCONFIG[swap-cfg]="$(</tmp/selection)"
 }
 
-function SET_SWAP_SPACE_OLD {
-  ##############################################################################
-  local BAKTITLE="Swap Size"
-  local HELP_MSG="Set the size of the swap/pagefile partition:"
-  ##############################################################################
-  local -a TAG_VALS DESCRIPS SELSTATE
-  local DFLTITEM PREV_CFG="${PHCONFIG[swapsize]}"
-
-  if [[ ${PHCONFIG[swap-cfg]} != pagefile ]]; then
-
-    for SCALING in 2 1.5 1 0.875 0.75 0.625 0.5 0.375 0.25 0.125; do
-      TAG_VALS+=("$("${BIN[awk]}" "BEGIN {print int(${SYSTEM[ram-sys]}*${SCALING})}")")
-      if [ "${TAG_VALS[-1]}" -gt 1023 ]; then
-        DESCRIPS+=("$("${BIN[printf]}" '%2.2fGiB' "$("${BIN[awk]}" "BEGIN {print ${TAG_VALS[-1]}/1024}")")")
-      else
-        DESCRIPS+=("$("${BIN[printf]}" '%2.2fMiB' "$("${BIN[awk]}" "BEGIN {print ${TAG_VALS[-1]}/1024}")")")
-      fi
-    done
-
-    [[ -n ${PREV_CFG} ]] && DFLTITEM="${PREV_CFG}" || DFLTITEM="${SYSTEM[ram-sys]}"
-
-    [[ ${TAG_VALS[-1]} -gt 1024 ]] && TAG_VALS+=('1024') && DESCRIPS+=('1.00GB') && SELSTATE+=('off')
-    [[ ${TAG_VALS[-1]} -gt 512 ]] && TAG_VALS+=('512') && DESCRIPS+=('512MiB') && SELSTATE+=('off')
-
-    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" "hidetags" "${DFLTITEM}" \
-      "${HELP_MSG}" "TAG_VALS" "DESCRIPS" "SELSTATE" || return "${?}"
-
-    PHCONFIG[swapsize]="$(</tmp/selection)"
-  fi
-}
-
 function SET_SWAP_SPACE {
   [[ ${PHCONFIG[swap-cfg]} == pagefile ]] && return 0
   ##############################################################################
