@@ -7,7 +7,7 @@ source "${0%/*}/ai-funcs"
 ################################################################################
 declare -r TITLEBAR="AI FORMATTER"
 declare -A PRT_SIZE PRT_TYPE PT_LABEL FS_LABEL FS_TYPE SUBVOLS
-declare PT_NAMES
+declare DEV_NAME PT_NAMES
 
 ################################################################################
 # Overly-cautious verification of required binaries
