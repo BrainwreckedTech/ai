@@ -565,7 +565,7 @@ function INSTALL_DIRECTORY {
   local -r BAKTITLE="OS Mount Location"
   local -r HELP_MSG="Where is the OS root filessystem mounted?"
   ##############################################################################
-  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt/
+  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt
   MOUNTPNT="$(</tmp/selection)"
 }
 
