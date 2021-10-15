@@ -132,40 +132,42 @@ function GENERATE_FSTAB {
 }
 
 function GENERATE_MKFS_COMMANDS {
-  local MNT_OPTS PTNUMBER THISPART SCRIPT SUBVOL
+  local MNT_OPTS LABEL PTNUMBER THISPART SCRIPT SUBVOL
 
   for THISPART in ${PT_NAMES}; do
     [[ rsvp,extprt =~ ${PRT_TYPE["${THISPART}"]} ]] && continue
 
     MNT_OPTS="noatime"
+    LABEL="${FS_LABEL["${THISPART}"]}"
+    [[ -n ${LABEL} ]] && unset LABEL
 
     case "${FS_TYPE["${THISPART}"]}" in
-       ext4) SCRIPT+="${MKFS[ext4]} -t ext4 -L ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
+       ext4) SCRIPT+="${MKFS[ext4]} -t ext4 ${LABEL+-L }${LABEL} /dev/${THISPART}"$'\n';;
       fat32)
           case "${PRT_TYPE["${THISPART}"]}" in
             efisp) FS_LABEL["${THISPART}"]="EFI_SYSPART";;
             xbldr) FS_LABEL["${THISPART}"]="XBOOTLOADER";;
           esac
-          SCRIPT+="${MKFS[fat32]} -F 32 -n ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
-        jfs) SCRIPT+="${MKFS[jfs]} -qL ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
-       ntfs) SCRIPT+="${MKFS[ntfs]} -QL ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
-       swap) SCRIPT+="${MKFS[swap]} -L ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
-        xfs) SCRIPT+="${MKFS[xfs]} -m rmapbt=1 -m bigtime=1 -fL ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n';;
+          SCRIPT+="${MKFS[fat32]} -F 32 ${LABEL+-n }${LABEL} /dev/${THISPART}"$'\n';;
+        jfs) SCRIPT+="${MKFS[jfs]} -q ${LABEL+-L }${LABEL} /dev/${THISPART}"$'\n';;
+       ntfs) SCRIPT+="${MKFS[ntfs]} -Q ${LABEL+-L }${LABEL} /dev/${THISPART}"$'\n';;
+       swap) SCRIPT+="${MKFS[swap]} ${LABEL+-L }${LABEL} /dev/${THISPART}"$'\n';;
+        xfs) SCRIPT+="${MKFS[xfs]} -m rmapbt=1 -m bigtime=1 -f ${LABEL+-L }${LABEL} /dev/${THISPART}"$'\n';;
         zfs)
           PTNUMBER=${THISPART#${DEV_NAME}}; PTNUMBER=${PTNUMBER#p}; PRT_TYPE["${THISPART}"]='bsdzfs'
           SCRIPT+="${BIN[sfdisk]} --part-type /dev/${DEV_NAME} ${PTNUMBER} $(GET_PARTITION_ID 'bsdzfs' 'gpt')"$'\n'
           SCRIPT+="${MKFS[zpool]} create -m none -o ashift=12 -O atime=off -O relatime=off -O acltype=posixacl -O canmount=off -O compression=zstd -O xattr=sa linux /dev/disk/by-partlabel/${PT_LABEL["${THISPART}"]}"$'\n';;
        f2fs)
           MNT_OPTS+=",compress_algorithm=zstd"
-          SCRIPT+="${MKFS[f2fs]} -fl ${FS_LABEL["${THISPART}"]} -O extra_attr,inode_checksum,sb_checksum,compression /dev/${THISPART}"$'\n'
-          SCRIPT+="${BIN[mount]} -o ${MNT_OPTS} -L ${FS_LABEL["${THISPART}"]} --target /mnt/phtm"$'\n'
+          SCRIPT+="${MKFS[f2fs]} -f ${LABEL+-l }${LABEL} -O extra_attr,inode_checksum,sb_checksum,compression /dev/${THISPART}"$'\n'
+          SCRIPT+="${BIN[mount]} -o ${MNT_OPTS} ${LABEL+-L }${LABEL} --target /mnt/phtm"$'\n'
           SCRIPT+="${BIN[chattr]} -R +c /mnt/phtm"$'\n'
           SCRIPT+="${BIN[umount]} /mnt/phtm"$'\n';;
       btrfs)
           MNT_OPTS+=",compress-force=zstd"
-          SCRIPT+="${MKFS[btrfs]} -fL ${FS_LABEL["${THISPART}"]} /dev/${THISPART}"$'\n'
+          SCRIPT+="${MKFS[btrfs]} -f ${LABEL+-L }${LABEL} /dev/${THISPART}"$'\n'
           if [[ -n ${SUBVOLS["${THISPART}"]} ]]; then
-            SCRIPT+="${BIN[mount]} -o ${MNT_OPTS} -L ${FS_LABEL["${THISPART}"]} --target /mnt/phtm"$'\n'
+            SCRIPT+="${BIN[mount]} -o ${MNT_OPTS} ${LABEL+-L }${LABEL} --target /mnt/phtm"$'\n'
             for SUBVOL in ${SUBVOLS["${THISPART}"]}; do
               SCRIPT+="${BIN[btrfs]} subvolume create /mnt/phtm/${SUBVOL}"$'\n'
             done
