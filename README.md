@@ -26,12 +26,7 @@ directory for use later.  For BTRFS, subvolumes can be set up ahead of
 time.  If the appropriate utilities are installed, will turn on
 compression for F2FS volumes.
 
-STATUS: Works, stable, only one bug left to consider.
-
-TODO: `ai-parts` uses some invalid/unconventional partition types to
-flag intentions to `ai-mkfs` for a couple of partitions that don't have
-a dedicated type.  `ai-mkfs` should set these partition types back to
-something valid/conventional.
+STATUS: Works, stable.
 
 ## `ai-pkgs`
 Installs packages into the new Linux environment.  Extra packages can
