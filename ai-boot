@@ -7,7 +7,8 @@ source "${0%/*}/ai-funcs"
 ################################################################################
 declare -r TITLEBAR="AI BOOT" ESP_GUID="$(GET_PARTITION_ID efisp)"
 declare OSCHROOT WIDEHACK="${GUI_WIDE}" ESPPARTS VALIDEFI
-declare LDR_MTPT LDR_BDEV LDR_BPTH LDR_DISK LDR_PNUM LDR_PTYP LDR_UUID
+declare LDR_MTPT LDR_BDEV LDR_BPTH LDR_DISK LDR_PNUM LDR_PTYP LDR_UUID IMG_VLID
+declare IMG_MTPT IMG_BDEV IMG_BPTH IMG_DISK IMG_PNUM IMG_PTYP IMG_UUID IMG_SBVL
 
 ################################################################################
 # Overly-cautious verification of required binaries
@@ -200,35 +201,6 @@ function GET_ACTIVE_STANZA_NAMES_REFIND {
   "${BIN[grep]}" -Pzo "${GREP_STR}" "${CFG_FILE}" | "${BIN[tr]}" -d '\0' | \
   "${BIN[grep]}" -P 'menuentry(?<!submenuentry)' | \
   "${BIN[sed]}" 's/menuentry //g;s/[ \t]*{.*$//g' | "${BIN[tr]}" -d '"'
-}
-
-function GET_BOOTLOADER_READABLE_PATH {
-  local -a CANDIDATES; local CANDIDATE GREP_STR
-
-  case "${1}" in
-           grub2) GREP_STR="\(btrfs\|ext[234]\|f2fs\|jfs\|nilfs\|ntfs\|reiser\|ufs\|vfat\|xfs\|zfs\)";;
-          refind) GREP_STR="\(btrfs\|ext[234]\|hfs\|reiser\|vfat\)";;
-        syslinux) GREP_STR="\(btrfs\|ext[234]\|ntfs\|ufs\|vfat\|xfs\)";;
-    systemd-boot) GREP_STR="vfat";;
-  esac
-
-  IFS=$'\n' read -r -d '' -a CANDIDATES < <("${BIN[mount]}" | "${BIN[grep]}" "${OSCHROOT}[ /]" | "${BIN[grep]}" "${GREP_STR}" | ${BIN[cut]} -d\  -f3)
-
-  for CANDIDATE in "${CANDIDATES[@]}"; do
-    compgen -G "${CANDIDATE}"/*vmlinuz-linux* > /dev/null && echo "${CANDIDATE}"
-  done
-}
-
-function GET_IMAGES_PATH {
-  local IMG_PATH; local -i LC
-
-  while true; do
-    ((LC++))
-    IMG_PATH="$("${BIN[find]}" "${1}" -maxdepth "${LC}" -name 'vmlinuz*' 2> /dev/null | "${BIN[sort]}" | "${BIN[head]}" -1)"
-    [[ -n ${IMG_PATH} ]] && break
-  done
-  IMG_PATH="${IMG_PATH%/vmlinuz*}"
-  echo "${IMG_PATH#${1}}"
 }
 
 function GET_KCL_ROOT_FLAGS {
@@ -619,16 +591,12 @@ function INSTALL_SYSTEMD_BOOT {
 }
 
 function GENERATE_BOOT_STANZA {
-  local IMG_MTPT IMG_SBVL IMG_PATH IMG_VLID RFS_BDEV RFS_SPEC RFS_FLGS
+  local RFS_BDEV RFS_SPEC RFS_FLGS
   local LUKS_DVC LUKSKCLP PLYMKCLP ADDLKCLP
   local OSR_NAME OSR_VRSN OSR_OSID
   local CPUMCODE MCODEIRD FULLPATH MIRD_IMG RIRD_IMG
   local -a KRNTYPES KRN_IMGS MIR_IMGS RIR_IMGS
 
-  IMG_MTPT="$(GET_BOOTLOADER_READABLE_PATH "${1}")"
-  IMG_SBVL="$("${BIN[mount]}" | "${BIN[grep]}" "${IMG_MTPT}" | "${BIN[grep]}" subvol | "${BIN[sed]}" 's/.*subvol=\(.*\),.*/\1/g')"
-  IMG_PATH="$(GET_IMAGES_PATH "${IMG_MTPT}")"
-  IMG_VLID="$(GET_VOLUME_ID "${IMG_MTPT}")"
   RFS_BDEV="$(GET_ROOT_BLOCK_DEVICE)"
   if [[ ${RFS_BDEV} =~ ^zfs ]]; then
     RFS_SPEC="${RFS_BDEV}"
@@ -684,12 +652,12 @@ function GENERATE_BOOT_STANZA {
   case "${1}" in
     refind)
       GENERATE_BOOT_STANZA_REFIND "${OSR_NAME}" "${OSR_VRSN}" "${OSR_OSID}" \
-        "${IMG_VLID}" 'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${RFS_SPEC}" \
+        'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${RFS_SPEC}" \
         "${RFS_FLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
       ;;
     systemd-boot)
       GENERATE_BOOT_STANZA_SYSTEMD_BOOT "${OSR_NAME}" "${OSR_VRSN}" "${OSR_OSID}" \
-        "${IMG_VLID}" 'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${RFS_SPEC}" \
+        'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${RFS_SPEC}" \
         "${RFS_FLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
       ;;
   esac
@@ -699,17 +667,16 @@ function GENERATE_BOOT_STANZA_REFIND {
   [[ -n "${1}" ]] && local OSR_NAME="${1}" || unset OSR_NAME
   [[ -n "${2}" ]] && local OSR_VRSN="${2}" || unset OSR_VRSN
   [[ -n "${3}" ]] && local OSR_OSID="${3}" || unset OSR_OSID
-  [[ -n "${4}" ]] && local IMG_VLID="${4}" || unset IMG_VLID
-  local -n KRNLTYPE="${5}"
-  local -n KRNLIMGS="${6}"
-  local -n MAINIRDS="${7}"
-  local -n RESCIRDS="${8}"
-  [[ -n "${9}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
-  [[ -n "${10}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
-  [[ -n "${11}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
-  [[ -n "${12}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
-  [[ -n "${13}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
-  [[ -n "${14}" ]] && local MCODEIRD="initrd=${14}" && MCODEIRD="${MCODEIRD/ / initrd=}" || unset MCODEIRD
+  local -n KRNLTYPE="${4}"
+  local -n KRNLIMGS="${5}"
+  local -n MAINIRDS="${6}"
+  local -n RESCIRDS="${7}"
+  [[ -n "${8}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
+  [[ -n "${9}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
+  [[ -n "${10}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
+  [[ -n "${11}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
+  [[ -n "${12}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
+  [[ -n "${13}" ]] && local MCODEIRD="initrd=${14}" && MCODEIRD="${MCODEIRD/ / initrd=}" || unset MCODEIRD
   local CFG_FILE USETHEME BAKTITLE HELP_MSG DFLTSLCT SELECTED BTSTANZA EXSTANZA STNZATTL
   local -a ASTANZAS SUGGESTS DESCRIPS
   local -i LC
@@ -722,7 +689,7 @@ function GENERATE_BOOT_STANZA_REFIND {
   for (( LC=0 ; LC<${#KRNLIMGS[@]} ; LC++ )); do
     BTSTANZA="menuentry \"${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNLTYPE+ }${KRNLTYPE^}\" {\n"
     BTSTANZA+="\ticon\t${USETHEME}/os_${OSR_OSID}.png\n"
-    BTSTANZA+="\tvolume\t${IMG_VLID}\n"
+    BTSTANZA+="\tvolume\t${IMG_PLBL:-${IMG_UUID}}\n"
     BTSTANZA+="\tloader\t${KRNLIMGS[${LC}]}\n"
     [[ -n ${MAINIRDS[${LC}]} ]] && BTSTANZA+="\tinitrd\t${MAINIRDS[${LC}]}\n"
     BTSTANZA+="\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
@@ -820,17 +787,16 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
   [[ -n "${1}" ]] && local OSR_NAME="${1}" || unset OSR_NAME
   [[ -n "${2}" ]] && local OSR_VRSN="${2}" || unset OSR_VRSN
   [[ -n "${3}" ]] && local OSR_OSID="${3}" || unset OSR_OSID
-  [[ -n "${4}" ]] && local IMG_VLID="${4}" || unset IMG_VLID
-  local -n KRNLTYPE="${5}"
-  local -n KRNLIMGS="${6}"
-  local -n MAINIRDS="${7}"
-  local -n RESCIRDS="${8}"
-  [[ -n "${9}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
-  [[ -n "${10}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
-  [[ -n "${11}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
-  [[ -n "${12}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
-  [[ -n "${13}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
-  [[ -n "${14}" ]] && local MCODEIRD="initrd\t${14}" && MCODEIRD="${MCODEIRD/ /\\ninitrd\\n}" || unset MCODEIRD
+  local -n KRNLTYPE="${4}"
+  local -n KRNLIMGS="${5}"
+  local -n MAINIRDS="${6}"
+  local -n RESCIRDS="${7}"
+  [[ -n "${8}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
+  [[ -n "${9}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
+  [[ -n "${10}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
+  [[ -n "${11}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
+  [[ -n "${12}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
+  [[ -n "${13}" ]] && local MCODEIRD="initrd\t${14}" && MCODEIRD="${MCODEIRD/ /\\ninitrd\\n}" || unset MCODEIRD
   local CFG_FILE BAKTITLE HELP_MSG SELECTED BTSTANZA EXSTANZA STNZATTL
   local -a ASTANZAS SUGGESTS DESCRIPS DISP_MGR SAME_IRD
   local -i LC
@@ -973,6 +939,38 @@ LDR_PTYP="$(${BIN[lsblk]} -lno NAME,PTTYPE | "${BIN[grep]}" "${LDR_BDEV##*/}" | 
 LDR_PTYP="${LDR_PTYP/dos/msdos}"
 LDR_UUID="$("${BIN[lsblk]}" -lno NAME,PARTUUID | "${BIN[grep]}" "${LDR_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
 LDR_PLBL="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${LDR_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+
+################################################################################
+# IMAGE LOCATION INFORMATION (kernels and initrds)
+################################################################################
+
+while true; do
+  ((LC++))
+  IMG_PATH="$("${BIN[find]}" "${OSCHROOT:-/}" -maxdepth "${LC}" -name 'vmlinuz*' 2> /dev/null | "${BIN[sort]}" | "${BIN[head]}" -1 | "${BIN[sed]}" 's|/vmlinuz.*||g')"
+  [[ -n ${IMG_PATH} ]] && break
+done
+
+# Now we have to descronstuct the path so we can find the mount point
+PTHPARTS="$(echo "${IMG_PATH}" | "${BIN[tr]}" -dc '/' | "${BIN[wc]}" -c)"
+((PTHPARTS++))
+
+# Walk backwards through the path
+for (( LC=PTHPARTS ; LC>0 ; LC-- )); do
+  PTHMOUNT="$(echo "${IMG_PATH}" | "${BIN[cut]}" -d/ -f1-"${LC}")"
+  IMG_BDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${PTHMOUNT} type" | "${BIN[cut]}" -d\  -f1)"
+  [[ -n ${IMG_BDEV} ]] && IMG_MTPT="${PTHMOUNT}" && break
+done
+
+# Now that we have IMG_MTPT, IMG_BDEV, and IMG_PATH like we did for LDR_*
+# it's time to get the rest.
+IMG_DISK="/dev/$("${BIN[lsblk]}" -lno NAME,PKNAME | "${BIN[grep]}" "${IMG_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+IMG_PNUM="${IMG_BDEV##${LDR_DISK}}"; IMG_PNUM="${IMG_PNUM#p}"
+IMG_PTYP="$(${BIN[lsblk]} -lno NAME,PTTYPE | "${BIN[grep]}" "${IMG_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+IMG_PTYP="${IMG_PTYP/dos/msdos}"
+IMG_UUID="$("${BIN[lsblk]}" -lno NAME,PARTUUID | "${BIN[grep]}" "${IMG_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+IMG_PLBL="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${IMG_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+IMG_SBVL="$("${BIN[mount]}" | "${BIN[grep]}" "on ${IMG_MTPT} type" | "${BIN[grep]}" subvol | "${BIN[sed]}" 's/.*subvol=\(.*\),.*/\1/g')"
+IMG_BPTH="${IMG_SBVL}${IMG_PATH#${IMG_MTPT}}"
 
 while true; do
   SELECT_BOOTLOADER || break
