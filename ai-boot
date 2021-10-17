@@ -96,7 +96,7 @@ function DEFAULT_MOUNT_OPTIONS {
   echo "${REGEXSTR}"
 }
 
-function ASK_EFI_STANDARD_OR_DEFAULT {
+function CHOOSE_EFI_STANDARD_OR_DEFAULT {
   local LOCATION="${1}"
   local -r BAKTITLE='Installation Type'
   local -r HELP_MSG='Do you want to install normally, or as a default bootloader?'
@@ -109,7 +109,7 @@ function ASK_EFI_STANDARD_OR_DEFAULT {
     "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
 }
 
-function ASK_REFIND_THEME {
+function CHOOSE_REFIND_THEME {
   ##############################################################################
   local -r BAKTITLE="rEFInd Theme"
   local -r HELP_MSG="Which theme do you want to use?"
@@ -574,7 +574,7 @@ function INSTALL_REFIND {
   local BTLDRUSR="/usr/share/refind"
   local LOCATION OUTPUTFN
 
-  ASK_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
+  CHOOSE_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
   LOCATION="$(</tmp/selection)"
 
   USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,refind/icons,refind/fonts}
@@ -601,7 +601,7 @@ function INSTALL_SYSTEMD_BOOT {
   local BTLDRESP="${LDR_MTPT}/EFI/systemd"
   local BTLDRUSR="/usr/lib/systemd/boot"
 
-  ASK_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
+  CHOOSE_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
   LOCATION="$(</tmp/selection)"
 
   USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,Linux,systemd} \
@@ -717,7 +717,7 @@ function GENERATE_BOOT_STANZA_REFIND {
   local -i LC
 
   CFG_FILE="${LDR_MTPT}/EFI/refind/refind.conf"
-  ASK_REFIND_THEME
+  CHOOSE_REFIND_THEME
   USETHEME="/EFI/refind/$(</tmp/selection)/icons"
   USETHEME="${USETHEME%/default}"
 
