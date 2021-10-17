@@ -6,7 +6,8 @@ source "${0%/*}/ai-funcs"
 # Here are more global variables to share amongst functions
 ################################################################################
 declare -r TITLEBAR="AI BOOT" ESP_GUID="$(GET_PARTITION_ID efisp)"
-declare LDR_MTPT LDR_BDEV LDR_DISK LDR_PART OSCHROOT WIDEHACK="${GUI_WIDE}"
+declare OSCHROOT WIDEHACK="${GUI_WIDE}" ESPPARTS VALIDEFI
+declare LDR_MTPT LDR_BDEV LDR_BPTH LDR_DISK LDR_PNUM LDR_PTYP LDR_UUID
 
 ################################################################################
 # Overly-cautious verification of required binaries
@@ -216,16 +217,6 @@ function GET_BOOTLOADER_READABLE_PATH {
   for CANDIDATE in "${CANDIDATES[@]}"; do
     compgen -G "${CANDIDATE}"/*vmlinuz-linux* > /dev/null && echo "${CANDIDATE}"
   done
-}
-
-function GET_ESP_MOUNTPOINT {
-  local CHOICES
-
-  CHOICES="$("${BIN[lsblk]}" -lno NAME,PARTTYPE | "${BIN[grep]}" "${ESP_GUID}" | \
-    "${BIN[cut]}" -d\  -f1 | "${BIN[paste]}" -d\  -s)"
-
-   "${BIN[mount]}" | "${BIN[grep]}" "${CHOICES// /\\|}" | \
-     "${BIN[grep]}" "${OSCHROOT}" | "${BIN[cut]}" -d\  -f3 | "${BIN[paste]}" -d\  -s
 }
 
 function GET_IMAGES_PATH {
@@ -925,17 +916,63 @@ function SELECT_BOOTLOADER {
     "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'Exit' || return 1
 }
 
-MOUNTPNT="$(GET_ESP_MOUNTPOINT)"
+################################################################################
+# EFI SYSTEM PARTITION INFO DISCOVERY
+################################################################################
 
-[[ -z ${MOUNTPNT} ]] && echo 'No EFI System Partition found on this machine' && exit 1
-[[ ${MOUNTPNT} =~ [[:blank:]] ]] && echo 'Multiple ESP mount points found.' && exit 1
+ESPPARTS="$("${BIN[lsblk]}" -lno NAME,PARTTYPE | "${BIN[grep]}" "${ESP_GUID}\|0xef" | \
+    "${BIN[cut]}" -d\  -f1 | "${BIN[paste]}" -d\  -s | ${BIN[sed]} 's/ /\\|/g')"
 
-LDR_MTPT="${MOUNTPNT}"
-LDR_BDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${LDR_MTPT} type" | "${BIN[cut]}" -d\  -f1)"
+# We should now have a string with '\|' between candidates
+
+if [[ -n ${ESPPARTS} ]]; then
+  # Parse the mounts output for block devices we've found to be EFI System Partitions
+  # Limit the output to the OSCHROOT we are working from
+  LDR_MTPT="$("${BIN[mount]}" | "${BIN[grep]}" "${ESPPARTS}" | \
+    "${BIN[grep]}" "${OSCHROOT}" | "${BIN[cut]}" -d\  -f3 | "${BIN[paste]}" -d\  -s)"
+  # If we've found more than one, fail for now.  In the future, prompt the user.
+  [[ ${LDR_MTPT} =~ [[:blank:]] ]] && echo 'Multiple ESP mount points found.' && exit 1
+  # Get the block device behind the mount point
+  LDR_BDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${LDR_MTPT} type" | "${BIN[cut]}" -d\  -f1)"
+  # Set the VALIDEFI variable.  It doesn't matter what, just that it's set.
+  VALIDEFI='set'
+fi
+
+# At this point, if LDR_MTPT is unset than we've failed to find an appropriate EFI
+# System Partition device.  Now we assume BIOS+MBR is being used.
+
+################################################################################
+# BIOS+MBR INFO DISCOVERY
+################################################################################
+
+if [[ -z ${LDR_MTPT} ]]; then
+  # Make sure VALIDEFI is unset, not just an empty string.  THIS IS IMPORTANT LATER!
+  unset VALIDEFI
+  # Since we can't rely on an EFI System Partition type anymore, assume /boot is
+  # where things are at and see if it's a mount point.
+  LDR_BDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT}/boot type" | "${BIN[cut]}" -d\  -f1)"
+  # This refers to how the boot loader will see the path of the images
+  LDR_BPTH="/"
+  LDR_MTPT="${OSCHROOT}/boot"
+  # If that didn't do the trick, get the root filesystem's block device.
+  if [[ -z ${LDR_BDEV} ]]; then
+    LDR_BDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT} type" | "${BIN[cut]}" -d\  -f1)"
+    # The loader will see the images in /boot now
+    LDR_BPTH="/boot"
+    LDR_MTPT="${OSCHROOT}"
+  fi
+fi
+
+################################################################################
+# LOADER INFORMATION
+################################################################################
+
 LDR_DISK="/dev/$("${BIN[lsblk]}" -lno NAME,PKNAME | "${BIN[grep]}" "${LDR_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
-LDR_PART="${LDR_BDEV##${LDR_DISK}}"
+LDR_PNUM="${LDR_BDEV##${LDR_DISK}}"; LDR_PNUM="${LDR_PNUM#p}"
+LDR_PTYP="$(${BIN[lsblk]} -lno NAME,PTTYPE | "${BIN[grep]}" "${LDR_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+LDR_PTYP="${LDR_PTYP/dos/msdos}"
 LDR_UUID="$("${BIN[lsblk]}" -lno NAME,PARTUUID | "${BIN[grep]}" "${LDR_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
-#ESP_PLBL="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${LDR_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+LDR_PLBL="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${LDR_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
 
 while true; do
   SELECT_BOOTLOADER || break
