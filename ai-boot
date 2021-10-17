@@ -628,7 +628,7 @@ function INSTALL_SYSTEMD_BOOT {
 }
 
 function GENERATE_BOOT_STANZA {
-  local IMG_MTPT IMG_SBVL IMG_PATH IMG_VLID ROOTBDEV ROOTSPEC ROOTFLGS
+  local IMG_MTPT IMG_SBVL IMG_PATH IMG_VLID RFS_BDEV RFS_SPEC RFS_FLGS
   local LUKS_DVC LUKSKCLP PLYMKCLP ADDLKCLP
   local OSR_NAME OSR_VRSN OSR_OSID
   local CPUMCODE MCODEIRD FULLPATH MIRD_IMG RIRD_IMG
@@ -638,17 +638,17 @@ function GENERATE_BOOT_STANZA {
   IMG_SBVL="$("${BIN[mount]}" | "${BIN[grep]}" "${IMG_MTPT}" | "${BIN[grep]}" subvol | "${BIN[sed]}" 's/.*subvol=\(.*\),.*/\1/g')"
   IMG_PATH="$(GET_IMAGES_PATH "${IMG_MTPT}")"
   IMG_VLID="$(GET_VOLUME_ID "${IMG_MTPT}")"
-  ROOTBDEV="$(GET_ROOT_BLOCK_DEVICE)"
-  if [[ ${ROOTBDEV} =~ ^zfs ]]; then
-    ROOTSPEC="${ROOTBDEV}"
+  RFS_BDEV="$(GET_ROOT_BLOCK_DEVICE)"
+  if [[ ${RFS_BDEV} =~ ^zfs ]]; then
+    RFS_SPEC="${RFS_BDEV}"
   else
-    ROOTSPEC="$(GET_ROOT_KCL "${ROOTBDEV}")"
-    ROOTFLGS="rootflags=$(GET_KCL_ROOT_FLAGS)"
+    RFS_SPEC="$(GET_ROOT_KCL "${RFS_BDEV}")"
+    RFS_FLGS="rootflags=$(GET_KCL_ROOT_FLAGS)"
   fi
-  if [[ ${ROOTBDEV} =~ /dev/mapper ]]; then
+  if [[ ${RFS_BDEV} =~ /dev/mapper ]]; then
     GET_PRIVILEGE
-    LUKS_DVC="$(USE_PRIVILEGE /sbin/cryptsetup status "${ROOTBDEV##*/}" | "${BIN[grep]}" 'device:' | "${BIN[sed]}" 's/.* //g')"
-    LUKSKCLP="$(GET_LUKS_KCL "${LUKS_DVC}"):${ROOTBDEV##*/}"
+    LUKS_DVC="$(USE_PRIVILEGE /sbin/cryptsetup status "${RFS_BDEV##*/}" | "${BIN[grep]}" 'device:' | "${BIN[sed]}" 's/.* //g')"
+    LUKSKCLP="$(GET_LUKS_KCL "${LUKS_DVC}"):${RFS_BDEV##*/}"
     if [[ $(</proc/cmdline) =~ cryptkey ]]; then
       if DIALOG_YESNO "${TITLEBAR}" "CryptKey" "Use cryptkey from kernel command line?"; then
         LUKSKCLP+=" cryptkey=$("${BIN[sed]}" 's/.*cryptkey=\(.*\) \?/\1/g' /proc/cmdline)"
@@ -693,13 +693,13 @@ function GENERATE_BOOT_STANZA {
   case "${1}" in
     refind)
       GENERATE_BOOT_STANZA_REFIND "${OSR_NAME}" "${OSR_VRSN}" "${OSR_OSID}" \
-        "${IMG_VLID}" 'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${ROOTSPEC}" \
-        "${ROOTFLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
+        "${IMG_VLID}" 'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${RFS_SPEC}" \
+        "${RFS_FLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
       ;;
     systemd-boot)
       GENERATE_BOOT_STANZA_SYSTEMD_BOOT "${OSR_NAME}" "${OSR_VRSN}" "${OSR_OSID}" \
-        "${IMG_VLID}" 'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${ROOTSPEC}" \
-        "${ROOTFLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
+        "${IMG_VLID}" 'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${RFS_SPEC}" \
+        "${RFS_FLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
       ;;
   esac
 }
@@ -713,8 +713,8 @@ function GENERATE_BOOT_STANZA_REFIND {
   local -n KRNLIMGS="${6}"
   local -n MAINIRDS="${7}"
   local -n RESCIRDS="${8}"
-  [[ -n "${9}"  ]] && local ROOTSPEC="${9}" || unset ROOTSPEC
-  [[ -n "${10}" ]] && local ROOTFLGS="${10}" || unset ROOTFLGS
+  [[ -n "${9}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
+  [[ -n "${10}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
   [[ -n "${11}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
   [[ -n "${12}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
   [[ -n "${13}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
@@ -734,28 +734,28 @@ function GENERATE_BOOT_STANZA_REFIND {
     BTSTANZA+="\tvolume\t${IMG_VLID}\n"
     BTSTANZA+="\tloader\t${KRNLIMGS[${LC}]}\n"
     [[ -n ${MAINIRDS[${LC}]} ]] && BTSTANZA+="\tinitrd\t${MAINIRDS[${LC}]}\n"
-    BTSTANZA+="\toptions\t\"${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+    BTSTANZA+="\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
     if [[ ${ADDLKCLP} =~ quiet ]]; then
       STNZATTL='Verbose startup'
       [[ -z ${PLMTHKCL} ]] && STNZATTL="${STNZATTL#V/No splash & v}"
       BTSTANZA+="\tsubmenuentry \"${STNZATTL}\" {\n"
-      BTSTANZA+="\t\toptions\t\"${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+      BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+="\t}\n"
     fi
     if [[ -e ${OSCHROOT}/etc/systemd/system/display-manager.service ]]; then
       BTSTANZA+='\tsubmenuentry "Boot to CLI (no display manager) {\n'
-      BTSTANZA+="\t\toptions\t\"${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+      BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+='\t}\n'
     fi
     if [[ ${MAINIRDS[${LC}]} != "${RESCIRDS[${LC}]}" ]] && [[ -n ${RESCIRDS[${LC}]} ]]; then
       BTSTANZA+='\tsubmenuentry "Boot with fallback InitRAMFS" {\n'
       BTSTANZA+="\t\tinitrd\t${RESCIRDS[${LC}]}\n"
-      BTSTANZA+="\t\toptions\t\"${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+      BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+='\t}\n'
     fi
     BTSTANZA+='\tsubmenuentry "Boot to systemd rescue.target" {\n'
     [[ -n ${RESCIRDS[${LC}]} ]] && BTSTANZA+="\t\tinitrd ${RESCIRDS[${LC}]}\n"
-    BTSTANZA+="\t\toptions\t\"${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}  systemd.unit=rescue.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+    BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}  systemd.unit=rescue.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
     BTSTANZA+='\t}\n'
     BTSTANZA+='}'
   done
@@ -834,8 +834,8 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
   local -n KRNLIMGS="${6}"
   local -n MAINIRDS="${7}"
   local -n RESCIRDS="${8}"
-  [[ -n "${9}"  ]] && local ROOTSPEC="${9}" || unset ROOTSPEC
-  [[ -n "${10}" ]] && local ROOTFLGS="${10}" || unset ROOTFLGS
+  [[ -n "${9}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
+  [[ -n "${10}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
   [[ -n "${11}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
   [[ -n "${12}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
   [[ -n "${13}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
@@ -871,13 +871,13 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
       esac
       case "${CFG_TYPE}" in
         common)
-          BTSTANZA+="options\t${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}\n";;
+          BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}\n";;
         gabby|oops)
-          BTSTANZA+="options\t${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP}\n";;
+          BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP}\n";;
         nogui)
-          BTSTANZA+="options\t${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target\n";;
+          BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target\n";;
         rescue)
-          BTSTANZA+="options\t${ROOTSPEC}${ROOTFLGS+ }${ROOTFLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target\n";;
+          BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target\n";;
       esac
       USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/${OSR_OSID}-${KRNLTYPE,,}-${CFG_TYPE}.conf'"
     done
