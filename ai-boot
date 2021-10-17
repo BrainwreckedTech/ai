@@ -13,6 +13,7 @@ declare FULLPATH MIRD_IMG RIRD_IMG
 declare -a KRNTYPES KRN_IMGS MIR_IMGS RIR_IMGS
 declare CPUMCODE MCODEIRD FULLPATH MIRD_IMG RIRD_IMG
 declare RFS_TYPE RFS_BDEV RFS_SPEC RFS_UUID RFS_FLBL RFS_FLGS
+declare OSR_NAME OSR_VRSN OSR_OSID
 
 ################################################################################
 # Overly-cautious verification of required binaries
@@ -558,7 +559,6 @@ function INSTALL_SYSTEMD_BOOT {
 
 function GENERATE_BOOT_STANZA {
   local LUKS_DVC LUKSKCLP PLYMKCLP ADDLKCLP
-  local OSR_NAME OSR_VRSN OSR_OSID
 
   if [[ ${RFS_BDEV} =~ /dev/mapper ]]; then
     GET_PRIVILEGE
@@ -578,12 +578,6 @@ function GENERATE_BOOT_STANZA {
   ADDLKCLP="rw $(</tmp/selection)"
   ADDLKCLP="${ADDLKCLP//  / }"
 
-  OSR_NAME="$("${BIN[grep]}" '^NAME=' "${OSCHROOT}/etc/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
-  OSR_VRSN="$("${BIN[grep]}" '^VERSION=' "${OSCHROOT}/etc/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
-  OSR_OSID="$("${BIN[grep]}" '^ID=' "${OSCHROOT}/etc/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
-  [[ -z ${OS_VRSN} ]] && OSR_VRSN="$("${BIN[grep]}" '^VERSION_ID=' "${OSCHROOT}/usr/lib/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
-  [[ ${OSR_OSID} =~ '-' ]] && OSR_OSID="${OSR_OSID%-*}"
-
   case "${1}" in
     refind)
       GENERATE_BOOT_STANZA_REFIND       "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}";;
@@ -593,12 +587,9 @@ function GENERATE_BOOT_STANZA {
 }
 
 function GENERATE_BOOT_STANZA_REFIND {
-  [[ -n "${1}" ]] && local OSR_NAME="${1}" || unset OSR_NAME
-  [[ -n "${2}" ]] && local OSR_VRSN="${2}" || unset OSR_VRSN
-  [[ -n "${3}" ]] && local OSR_OSID="${3}" || unset OSR_OSID
-  [[ -n "${4}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
-  [[ -n "${5}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
-  [[ -n "${6}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
+  [[ -n "${1}" ]] && local ADDLKCLP="${1}" || unset ADDLKCLP
+  [[ -n "${2}" ]] && local PLYMKCLP="${2}" || unset PLYMKCLP
+  [[ -n "${3}" ]] && local LUKSKCLP="${3}" || unset LUKSKCLP
   local CFG_FILE USETHEME BAKTITLE HELP_MSG DFLTSLCT SELECTED BTSTANZA EXSTANZA STNZATTL
   local -a ASTANZAS SUGGESTS DESCRIPS
   local -i LC
@@ -706,12 +697,9 @@ function GENERATE_BOOT_STANZA_REFIND {
 }
 
 function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
-  [[ -n "${1}" ]] && local OSR_NAME="${1}" || unset OSR_NAME
-  [[ -n "${2}" ]] && local OSR_VRSN="${2}" || unset OSR_VRSN
-  [[ -n "${3}" ]] && local OSR_OSID="${3}" || unset OSR_OSID
-  [[ -n "${4}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
-  [[ -n "${5}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
-  [[ -n "${6}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
+  [[ -n "${1}" ]] && local ADDLKCLP="${1}" || unset ADDLKCLP
+  [[ -n "${2}" ]] && local PLYMKCLP="${2}" || unset PLYMKCLP
+  [[ -n "${3}" ]] && local LUKSKCLP="${3}" || unset LUKSKCLP
   local CFG_FILE BAKTITLE HELP_MSG SELECTED BTSTANZA EXSTANZA STNZATTL
   local -a ASTANZAS SUGGESTS DESCRIPS DISP_MGR SAME_IRD
   local -i LC
@@ -937,6 +925,20 @@ else
   RFS_FLGS="rootflags=$("${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type" | \
     "${BIN[sed]}" 's/.*(\(.*\))/\1/g' | "${BIN[sed]}" "s/$(DEFAULT_MOUNT_OPTIONS)//g;s/,$//g")"
 fi
+
+################################################################################
+# OS-RELEASE INFORMATION
+################################################################################
+
+OSR_NAME="$("${BIN[grep]}" '^NAME=' "${OSCHROOT}/etc/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
+OSR_VRSN="$("${BIN[grep]}" '^VERSION=' "${OSCHROOT}/etc/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
+OSR_OSID="$("${BIN[grep]}" '^ID=' "${OSCHROOT}/etc/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
+[[ -z ${OS_VRSN} ]] && OSR_VRSN="$("${BIN[grep]}" '^VERSION_ID=' "${OSCHROOT}/usr/lib/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
+[[ -z ${OS_VRSN} ]] && unset OSR_VRSN
+[[ ${OSR_OSID} =~ '-' ]] && OSR_OSID="${OSR_OSID%-*}"
+
+# This is a useful debugging line to see what all the discovery found
+# set | grep '^IMG\|^KRN\|^LDR\|^MCO\|^OSR\|^RFS'; exit 0
 
 while true; do
   SELECT_BOOTLOADER || break
