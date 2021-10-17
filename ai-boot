@@ -503,55 +503,55 @@ function INSTALL_HOOK_SYSTEMDBOOT {
 }
 
 function INSTALL_REFIND {
-  local BTLDRESP="${LDR_MTPT}/EFI/refind"
-  local BTLDRUSR="/usr/share/refind"
+  local LDR_PATH="${LDR_MTPT}/EFI/refind"
+  local LDR_USHR="/usr/share/refind"
   local LOCATION OUTPUTFN FW
 
-  CHOOSE_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
+  CHOOSE_EFI_STANDARD_OR_DEFAULT "${LDR_PATH}"
   LOCATION="$(</tmp/selection)"
 
-  USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,refind/icons,refind/fonts}
+  USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,refind/icons/svg,refind/fonts}
 
   for FW in x64 ia32; do
-    if [[ -e ${OSCHROOT}${BTLDRUSR}/drivers_${FW} ]]; then
-      USE_PRIVILEGE "${BIN[mkdir]}" -p "${BTLDRESP}/drivers_${FW}"
-      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}${BTLDRUSR}/drivers_${FW}/"* "${BTLDRESP}/drivers_${FW}/"
+    if [[ -e ${OSCHROOT}${LDR_USHR}/drivers_${FW} ]]; then
+      USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_PATH}/drivers_${FW}"
+      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}${LDR_USHR}/drivers_${FW}/"* "${LDR_PATH}/drivers_${FW}/"
     fi
-    if [[ -e ${OSCHROOT}${BTLDRUSR}/refind_${FW}.efi ]]; then
+    if [[ -e ${OSCHROOT}${LDR_USHR}/refind_${FW}.efi ]]; then
       [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${FW}.efi" || unset OUTPUTFN
-      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}${BTLDRUSR}/refind_${FW}.efi" "${LOCATION}/${OUTPUTFN}"
+      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}${LDR_USHR}/refind_${FW}.efi" "${LOCATION}/${OUTPUTFN}"
     fi
   done
 
-  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${BTLDRUSR}/refind.conf-sample" "${BTLDRESP}/refind.conf"
-  USE_PRIVILEGE "${BIN[cp]}" -rnp "${OSCHROOT}${BTLDRUSR}/icons/"* "${BTLDRESP}/icons/"
-  USE_PRIVILEGE "${BIN[cp]}" -rnp "${OSCHROOT}${BTLDRUSR}/fonts/"* "${BTLDRESP}/fonts/"
+  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/refind.conf-sample" "${LDR_PATH}/refind.conf"
+  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/icons/svg/"* "${LDR_PATH}/icons/svg"
+  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/icons/"* "${LDR_PATH}/icons/"
+  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/fonts/"* "${LDR_PATH}/fonts/"
 
   [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
 }
 
 function INSTALL_SYSTEMD_BOOT {
-  local BTLDRESP="${LDR_MTPT}/EFI/systemd"
-  local BTLDRUSR="/usr/lib/systemd/boot"
-  local LOCATION OUTPUTFN FW
+  local LDR_PATH="${LDR_MTPT}/EFI/systemd"
+  local LDR_ULIB="${OSCHROOT}/usr/lib/systemd/boot/efi"
 
-  CHOOSE_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
+  CHOOSE_EFI_STANDARD_OR_DEFAULT "${LDR_PATH}"
   LOCATION="$(</tmp/selection)"
 
   USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,Linux,systemd} \
     "${LDR_MTPT}"/loader/entries
 
   for FW in x64 ia32; do
-    if [[ -e ${OSCHROOT}${BTLDRUSR}/systemd-boot${FW}.efi ]]; then
+    if [[ -e ${LDR_ULIB}/systemd-boot${FW}.efi ]]; then
       [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${FW}.efi" || unset OUTPUTFN
-      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/${BTLDRUSR}/systemd-boot${FW}.efi" "${LOCATION}/${OUTPUTFN}"
+      USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_ULIB}/systemd-boot${FW}.efi" "${LOCATION}/${OUTPUTFN}"
     fi
   done
 
-  [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
-
   [[ -e "${LDR_MTPT}/loader/random-seed" ]] || \
     USE_PRIVILEGE "${BIN[dd]}" if=/dev/random of="${LDR_MTPT}/loader/random-seed" bs=512 count=1 > /dev/null 2>&1
+
+  [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
 }
 
 function GENERATE_BOOT_STANZA {
