@@ -97,9 +97,12 @@ function DEFAULT_MOUNT_OPTIONS {
 }
 
 function CHOOSE_EFI_STANDARD_OR_DEFAULT {
-  local LOCATION="${1}"
+  ##############################################################################
   local -r BAKTITLE='Installation Type'
   local -r HELP_MSG='Do you want to install normally, or as a default bootloader?'
+  ##############################################################################
+  local -a SUGGESTS DESCRIPS
+  local LOCATION="${1}"
 
   SUGGESTS=("${LOCATION}" "${LOCATION%%/EFI*}/EFI/Boot")
   DESCRIPS=("Install bootloader normally (in /EFI${LOCATION##*/EFI}) and create boot entry if needed"
@@ -350,8 +353,9 @@ function GET_VOLUME_ID {
 }
 
 function CONFIGURE_REFIND {
-  local CFG_OPTN EXISTCFG BTLDRCFG="${LDR_MTPT}/EFI/refind/refind.conf"
-  local SUGGESTS DESCRIPS SELSTATE
+  local BTLDRCFG="${LDR_MTPT}/EFI/refind/refind.conf"
+  local CFG_OPTN EXISTCFG HELP_MSG BOOLTRUE BOOLNOPE
+  local -a SUGGESTS DESCRIPS SELSTATE
   local -ra LOOK_FOR=(timeout:range use_nvram:bool banner:select textonly:bool
                       textmode:select resolution:text use_graphics_for:multi
                       showtools:text scanfor:text dont_scan_dirs:text
@@ -431,6 +435,7 @@ function CONFIGURE_REFIND {
 
 function CONFIGURE_SYSTEMD_BOOT {
   local CFG_OPTN EXISTCFG BTLDRCFG="${LDR_MTPT}/loader/loader.conf"
+  local HELP_MSG XTRATABS
   local -ra LOOK_FOR=(default:select timeout:range console-mode:select editor:bool
                       auto-entries:bool auto-firmware:bool random-seed-mode:select)
 
@@ -484,6 +489,7 @@ function CONFIGURE_SYSTEMD_BOOT {
 }
 
 function INSTALL_EFI_BOOT_ENTRY {
+  local EFI_PATH BT_LABEL CURRENT
   case "${SYSTEM[cpu-arch]}" in
     *86)
       case "${SYSTEM[fw-bits]}" in
@@ -511,7 +517,6 @@ function INSTALL_EFI_BOOT_ENTRY {
     USE_PRIVILEGE "${BIN[efibootmgr]}" --quiet --create --disk "${LDR_DISK}" --part "${LDR_PART#p}" --loader "${EFI_PATH}" --label "${BT_LABEL}"
   fi
   shopt -u nocasematch
-  set +x
 }
 
 function INSTALL_EFI_TOOLS {
@@ -572,7 +577,7 @@ function INSTALL_HOOK_SYSTEMDBOOT {
 function INSTALL_REFIND {
   local BTLDRESP="${LDR_MTPT}/EFI/refind"
   local BTLDRUSR="/usr/share/refind"
-  local LOCATION OUTPUTFN
+  local LOCATION OUTPUTFN FW
 
   CHOOSE_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
   LOCATION="$(</tmp/selection)"
@@ -600,6 +605,7 @@ function INSTALL_REFIND {
 function INSTALL_SYSTEMD_BOOT {
   local BTLDRESP="${LDR_MTPT}/EFI/systemd"
   local BTLDRUSR="/usr/lib/systemd/boot"
+  local LOCATION OUTPUTFN FW
 
   CHOOSE_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
   LOCATION="$(</tmp/selection)"
@@ -898,7 +904,7 @@ function SELECT_BOOTLOADER {
   local -r BAKTITLE="Bootloader Selection"
   local -r HELP_MSG="Select the boot loader to configure and install:"
   #######################################################################
-  local SUGGESTS DESCRIPS
+  local -a SUGGESTS DESCRIPS
 
   if [[ -e ${OSCHROOT}/usr/sbin/grub-mkconfig ]]; then
     SUGGESTS+=(grub2)
