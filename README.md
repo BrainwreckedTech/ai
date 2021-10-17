@@ -60,8 +60,8 @@ STATUS: Work in progress.
 
 | Firmware | Bootloader   | Installation | Tools | Hook | Stanza | Configure |
 |:--------:|:------------:|:------------:|:-----:|:----:|:------:|:---------:|
-| BIOS     | GRUB 2       |❌|❌|❌|❌|❌|
-| UEFI     | GRUB 2       |❌|❌|❌|❌|❌|
+| BIOS     | GRUB 2       |✔|✅|?|❌|❌|
+| UEFI     | GRUB 2       |✔|✅|?|❌|❌|
 | UEFI     | rEFInd       |✔|✔|✔|✔|✔|
 | BIOS     | SysLinux     |✔|✔|?|✔|✔|
 | UEFI     | SysLinux     |✔|ⁿ∕ₐ|?|✔|✔|

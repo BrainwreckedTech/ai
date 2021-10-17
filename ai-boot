@@ -19,7 +19,7 @@ declare OSR_NAME OSR_VRSN OSR_OSID
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in cp dd df efibootmgr find head mkdir mount paste tail; do
+for CMD in cp dd df efibootmgr find head mkdir mv mount paste tail; do
     BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
@@ -951,6 +951,10 @@ function INSTALL_EFI_BOOT_ENTRY {
   esac
 
   case "${1}" in
+    grub)
+      EFI_PATH="/EFI/grub/grub${SUFFIX}.efi"
+      BT_LABEL='GRUB'
+      ;;
     refind)
       EFI_PATH="/EFI/refind/refind_${SUFFIX}.efi"
       BT_LABEL='rEFInd Boot Manager'
@@ -1024,6 +1028,57 @@ function INSTALL_HOOK_SYSTEMDBOOT {
 		Exec=/usr/bin/refind-install
 		ENDOFSCRIPT"
   fi
+}
+
+function INSTALL_GRUB {
+  local LDR_PATH LDR_ULIB LOCATION USINGMBR
+  if [[ ${VALIDEFI+y} == y ]]; then
+    LDR_PATH="${LDR_MTPT}/EFI/grub"
+    CHOOSE_EFI_STANDARD_OR_DEFAULT "${LDR_PATH}"
+    LOCATION="$(</tmp/selection)"
+  else
+    LDR_PATH="${LDR_MTPT}${LDR_BPTH}/grub"
+    LOCATION="${LDR_MTPT}${LDR_BPTH}/grub"
+  fi
+  LDR_ULIB="${OSCHROOT}/usr/lib/grub"
+  LDR_USHR="${OSCHROOT}/usr/share/grub"
+
+  USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}${LDR_BPTH}/grub" \
+    "${LDR_PATH//\/EFI/}"/{fonts,locale,themes/starfield,i386-pc,i386-efi,x86_64-efi}
+
+  USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_USHR}/"*.pf2 "${LDR_PATH//\/EFI/}/fonts"
+  USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_USHR}/themes/starfield/"* "${LDR_PATH//\/EFI/}/themes/starfield"
+
+  while read -r LOCALE; do
+    SHRTNAME="${LOCALE##*locale/}"
+    SHRTNAME="${SHRTNAME%%/*}"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${LOCALE}" "${LDR_PATH//\/EFI/}/locale/${SHRTNAME}.mo"
+  done < <("${BIN[find]}" "${OSCHROOT}/usr/share/locale" -name 'grub.mo')
+
+  for PLATFORM in x64:x86_64-efi ia32:i386-efi ia32:i386-pc; do
+    [[ ${PLATFORM} == ia32:i386-pc ]] && USINGMBR='yes' || unset USINGMBR
+    USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_ULIB}/${PLATFORM#*:}/"*.mod "${LDR_PATH//\/EFI/}/${PLATFORM#*:}/"
+    USE_PRIVILEGE  "${OSCHROOT}/usr/bin/grub-mkimage" --verbose --directory "${LDR_ULIB}/${PLATFORM#*:}" \
+      --prefix "(,${LDR_PTYP}${LDR_PNUM})/grub" --output "${LDR_PATH//\/EFI/}/${PLATFORM#*:}/core.efi" \
+      --format ${PLATFORM#*:} --compression 'auto' 'fat' "part_${LDR_PTYP}" ${USINGMBR+biosdisk}
+    if [[ ${PLATFORM} == ia32:i386-pc ]]; then
+      USE_PRIVILEGE "${BIN[mv]}" "${LDR_PATH//\/EFI/}/${PLATFORM#*:}/core.efi" "${LDR_PATH//\/EFI/}/${PLATFORM#*:}/core.img"
+      USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_ULIB}/${PLATFORM#*:}/boot.img" "${LDR_PATH//\/EFI/}/${PLATFORM#*:}/"
+      if [[ ${LDR_PTYP} == msdos ]]; then
+        USE_PRIVILEGE "${OSCHROOT}/usr/bin/grub-bios-setup" --verbose --directory="${LDR_PATH//\/EFI/}/${PLATFORM#*:}" \
+          --device-map="${LDR_PATH//\/EFI/}/device.map" "${LDR_DISK}"
+      fi
+    else
+      USE_PRIVILEGE "${OSCHROOT}/usr/bin/grub-mkimage" --verbose --directory "${LDR_ULIB}/${PLATFORM#*:}" \
+         --output "${LDR_PATH//\/EFI/}/${PLATFORM#*:}/grub.efi" \
+         --format "${PLATFORM#*:}" --compression 'auto' 'fat' "part_${LDR_PTYP}"
+    fi
+    [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${PLATFORM%:*}.efi" || unset OUTPUTFN
+    [[ ${LDR_PTYP} == gpt ]] && USE_PRIVILEGE "${BIN[cp]}" -up \
+      "${LDR_PATH//\/EFI/}/${PLATFORM#*:}/core.efi" "${LOCATION}/${OUTPUTFN}"
+  done
+
+  [[ ${LOCATION} =~ /EFI/Boot ]] || [[ ${VALIDEFI+y} != y ]] || INSTALL_EFI_BOOT_ENTRY grub
 }
 
 function INSTALL_REFIND {
@@ -1110,7 +1165,6 @@ function INSTALL_SYSTEMD_BOOT {
 
   [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
 }
-
 
 function SELECT_BOOTLOADER {
   #######################################################################
@@ -1298,7 +1352,9 @@ while true; do
   SELECT_BOOTLOADER || break
   case "$(</tmp/selection)" in
     grub2)
-      DIALOG_MSGBOX "${TITLEBAR}" 'GRUB 2' 'Not implemented yet'
+      INSTALL_GRUB && \
+      INSTALL_EFI_TOOLS
+      DIALOG_MSGBOX "${TITLEBAR}" 'GRUB 2' 'GRUB 2 and EFI tools have been installed, but no further functionality exists yet.'
       ;;
     refind)
       INSTALL_REFIND && \
