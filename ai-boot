@@ -445,7 +445,7 @@ function INSTALL_EFI_BOOT_ENTRY {
 
   shopt -s nocasematch
   if ! [[ ${CURRENT} =~ ${BT_LABEL}.*${LDR_UUID}.*${EFI_PATH//\//\\\\} ]]; then
-    USE_PRIVILEGE "${BIN[efibootmgr]}" --quiet --create --disk "${LDR_DISK}" --part "${LDR_PART#p}" --loader "${EFI_PATH}" --label "${BT_LABEL}"
+    USE_PRIVILEGE "${BIN[efibootmgr]}" --quiet --create --disk "${LDR_DISK}" --part "${LDR_PNUM}" --loader "${EFI_PATH}" --label "${BT_LABEL}"
   fi
   shopt -u nocasematch
 }
