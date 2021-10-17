@@ -419,141 +419,6 @@ function CONFIGURE_SYSTEMD_BOOT {
   done
 }
 
-function INSTALL_EFI_BOOT_ENTRY {
-  local EFI_PATH BT_LABEL CURRENT
-  case "${SYSTEM[cpu-arch]}" in
-    *86)
-      case "${SYSTEM[fw-bits]}" in
-        64) SUFFIX='x64';;
-        32) SUFFIX='ia32';;
-      esac
-      ;;
-  esac
-
-  case "${1}" in
-    refind)
-      EFI_PATH="/EFI/refind/refind_${SUFFIX}.efi"
-      BT_LABEL='rEFInd Boot Manager'
-      ;;
-    systemd-boot)
-      EFI_PATH="/EFI/systemd/systemd-boot${SUFFIX}.efi"
-      BT_LABEL='Linux Boot Manager'
-      ;;
-  esac
-
-  CURRENT="$("${BIN[efibootmgr]}" -v)"
-
-  shopt -s nocasematch
-  if ! [[ ${CURRENT} =~ ${BT_LABEL}.*${LDR_UUID}.*${EFI_PATH//\//\\\\} ]]; then
-    USE_PRIVILEGE "${BIN[efibootmgr]}" --quiet --create --disk "${LDR_DISK}" --part "${LDR_PNUM}" --loader "${EFI_PATH}" --label "${BT_LABEL}"
-  fi
-  shopt -u nocasematch
-}
-
-function INSTALL_EFI_TOOLS {
-  if [[ -e ${OSCHROOT}/usr/share/edk2-shell ]]; then
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/ia32/Shell_Full.efi" "${LDR_MTPT}/EFI/shellia32.efi"
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/x64/Shell_Full.efi" "${LDR_MTPT}/EFI/shellx64.efi"
-  elif  [[ -e ${OSCHROOT}/usr/uefi/edk2-shell ]]; then
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellia32_v2.efi" "${LDR_MTPT}/EFI/shellia32.efi"
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellx64_v2.efi" "${LDR_MTPT}/EFI/shellx64.efi"
-  fi
-  if [[ -e ${OSCHROOT}/usr/lib/fwupd/efi/ ]]; then
-    USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/EFI/tools/"
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/lib/fwupd/efi/fwupd"* "${LDR_MTPT}/EFI/tools/"
-  fi
-  if [[ -e ${OSCHROOT}/usr/share/memtest86-efi ]]; then
-    USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/EFI/tools/"
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/memtest86-efi/"*.* "${LDR_MTPT}/EFI/tools/"
-  fi
-}
-
-function INSTALL_HOOK_REFIND {
-  if ! [[ -e ${OSCHROOT}/etc/pacman.d/hooks/refind.hook ]]; then
-    USE_PRIVILEGE "${BIN[mkdir]}" -p "${OSCHROOT}/etc/pacman.d/hooks"
-    USE_PRIVILEGE sh -c "'${BIN[cat]}' <<- ENDOFSCRIPT > ${OSCHROOT}/etc/pacman.d/hooks/refind.hook
-		[Trigger]
-		Type=Package
-		Operation=Upgrade
-		Target=systemd
-
-		[Action]
-		Description=Updating systemd-boot
-		When=PostTransaction
-		Exec=/usr/bin/bootctl update
-		ENDOFSCRIPT"
-  fi
-}
-
-function INSTALL_HOOK_SYSTEMDBOOT {
-  if ! [[ -e ${OSCHROOT}/etc/pacman.d/hooks/100-systemd-boot.hook ]]; then
-    USE_PRIVILEGE "${BIN[mkdir]}" -p "${OSCHROOT}/etc/pacman.d/hooks"
-    USE_PRIVILEGE sh -c "'${BIN[cat]}' <<- ENDOFSCRIPT > ${OSCHROOT}/etc/pacman.d/hooks/100-systemd-boot.hook
-		[Trigger]
-		Operation=Upgrade
-		Type=Package
-		Target=refind
-		
-		[Action]
-		Description=Updating rEFInd on ESP
-		When=PostTransaction
-		Exec=/usr/bin/refind-install
-		ENDOFSCRIPT"
-  fi
-}
-
-function INSTALL_REFIND {
-  local LDR_PATH="${LDR_MTPT}/EFI/refind"
-  local LDR_USHR="/usr/share/refind"
-  local LOCATION OUTPUTFN FW
-
-  CHOOSE_EFI_STANDARD_OR_DEFAULT "${LDR_PATH}"
-  LOCATION="$(</tmp/selection)"
-
-  USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,refind/icons/svg,refind/fonts}
-
-  for FW in x64 ia32; do
-    if [[ -e ${OSCHROOT}${LDR_USHR}/drivers_${FW} ]]; then
-      USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_PATH}/drivers_${FW}"
-      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}${LDR_USHR}/drivers_${FW}/"* "${LDR_PATH}/drivers_${FW}/"
-    fi
-    if [[ -e ${OSCHROOT}${LDR_USHR}/refind_${FW}.efi ]]; then
-      [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${FW}.efi" || unset OUTPUTFN
-      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}${LDR_USHR}/refind_${FW}.efi" "${LOCATION}/${OUTPUTFN}"
-    fi
-  done
-
-  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/refind.conf-sample" "${LDR_PATH}/refind.conf"
-  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/icons/svg/"* "${LDR_PATH}/icons/svg"
-  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/icons/"* "${LDR_PATH}/icons/"
-  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/fonts/"* "${LDR_PATH}/fonts/"
-
-  [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
-}
-
-function INSTALL_SYSTEMD_BOOT {
-  local LDR_PATH="${LDR_MTPT}/EFI/systemd"
-  local LDR_ULIB="${OSCHROOT}/usr/lib/systemd/boot/efi"
-
-  CHOOSE_EFI_STANDARD_OR_DEFAULT "${LDR_PATH}"
-  LOCATION="$(</tmp/selection)"
-
-  USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,Linux,systemd} \
-    "${LDR_MTPT}"/loader/entries
-
-  for FW in x64 ia32; do
-    if [[ -e ${LDR_ULIB}/systemd-boot${FW}.efi ]]; then
-      [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${FW}.efi" || unset OUTPUTFN
-      USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_ULIB}/systemd-boot${FW}.efi" "${LOCATION}/${OUTPUTFN}"
-    fi
-  done
-
-  [[ -e "${LDR_MTPT}/loader/random-seed" ]] || \
-    USE_PRIVILEGE "${BIN[dd]}" if=/dev/random of="${LDR_MTPT}/loader/random-seed" bs=512 count=1 > /dev/null 2>&1
-
-  [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
-}
-
 function GENERATE_BOOT_STANZA {
   local LUKS_DVC LUKSKCLP PLYMKCLP ADDLKCLP
 
@@ -756,6 +621,142 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
     USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-memtest86.conf'"
   fi
 }
+
+function INSTALL_EFI_BOOT_ENTRY {
+  local EFI_PATH BT_LABEL CURRENT
+  case "${SYSTEM[cpu-arch]}" in
+    *86)
+      case "${SYSTEM[fw-bits]}" in
+        64) SUFFIX='x64';;
+        32) SUFFIX='ia32';;
+      esac
+      ;;
+  esac
+
+  case "${1}" in
+    refind)
+      EFI_PATH="/EFI/refind/refind_${SUFFIX}.efi"
+      BT_LABEL='rEFInd Boot Manager'
+      ;;
+    systemd-boot)
+      EFI_PATH="/EFI/systemd/systemd-boot${SUFFIX}.efi"
+      BT_LABEL='Linux Boot Manager'
+      ;;
+  esac
+
+  CURRENT="$("${BIN[efibootmgr]}" -v)"
+
+  shopt -s nocasematch
+  if ! [[ ${CURRENT} =~ ${BT_LABEL}.*${LDR_UUID}.*${EFI_PATH//\//\\\\} ]]; then
+    USE_PRIVILEGE "${BIN[efibootmgr]}" --quiet --create --disk "${LDR_DISK}" --part "${LDR_PNUM}" --loader "${EFI_PATH}" --label "${BT_LABEL}"
+  fi
+  shopt -u nocasematch
+}
+
+function INSTALL_EFI_TOOLS {
+  if [[ -e ${OSCHROOT}/usr/share/edk2-shell ]]; then
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/ia32/Shell_Full.efi" "${LDR_MTPT}/EFI/shellia32.efi"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/x64/Shell_Full.efi" "${LDR_MTPT}/EFI/shellx64.efi"
+  elif  [[ -e ${OSCHROOT}/usr/uefi/edk2-shell ]]; then
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellia32_v2.efi" "${LDR_MTPT}/EFI/shellia32.efi"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellx64_v2.efi" "${LDR_MTPT}/EFI/shellx64.efi"
+  fi
+  if [[ -e ${OSCHROOT}/usr/lib/fwupd/efi/ ]]; then
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/EFI/tools/"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/lib/fwupd/efi/fwupd"* "${LDR_MTPT}/EFI/tools/"
+  fi
+  if [[ -e ${OSCHROOT}/usr/share/memtest86-efi ]]; then
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/EFI/tools/"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/memtest86-efi/"*.* "${LDR_MTPT}/EFI/tools/"
+  fi
+}
+
+function INSTALL_HOOK_REFIND {
+  if ! [[ -e ${OSCHROOT}/etc/pacman.d/hooks/refind.hook ]]; then
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${OSCHROOT}/etc/pacman.d/hooks"
+    USE_PRIVILEGE sh -c "'${BIN[cat]}' <<- ENDOFSCRIPT > ${OSCHROOT}/etc/pacman.d/hooks/refind.hook
+		[Trigger]
+		Type=Package
+		Operation=Upgrade
+		Target=systemd
+
+		[Action]
+		Description=Updating systemd-boot
+		When=PostTransaction
+		Exec=/usr/bin/bootctl update
+		ENDOFSCRIPT"
+  fi
+}
+
+function INSTALL_HOOK_SYSTEMDBOOT {
+  if ! [[ -e ${OSCHROOT}/etc/pacman.d/hooks/100-systemd-boot.hook ]]; then
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${OSCHROOT}/etc/pacman.d/hooks"
+    USE_PRIVILEGE sh -c "'${BIN[cat]}' <<- ENDOFSCRIPT > ${OSCHROOT}/etc/pacman.d/hooks/100-systemd-boot.hook
+		[Trigger]
+		Operation=Upgrade
+		Type=Package
+		Target=refind
+		
+		[Action]
+		Description=Updating rEFInd on ESP
+		When=PostTransaction
+		Exec=/usr/bin/refind-install
+		ENDOFSCRIPT"
+  fi
+}
+
+function INSTALL_REFIND {
+  local LDR_PATH="${LDR_MTPT}/EFI/refind"
+  local LDR_USHR="/usr/share/refind"
+  local LOCATION OUTPUTFN FW
+
+  CHOOSE_EFI_STANDARD_OR_DEFAULT "${LDR_PATH}"
+  LOCATION="$(</tmp/selection)"
+
+  USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,refind/icons/svg,refind/fonts}
+
+  for FW in x64 ia32; do
+    if [[ -e ${OSCHROOT}${LDR_USHR}/drivers_${FW} ]]; then
+      USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_PATH}/drivers_${FW}"
+      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}${LDR_USHR}/drivers_${FW}/"* "${LDR_PATH}/drivers_${FW}/"
+    fi
+    if [[ -e ${OSCHROOT}${LDR_USHR}/refind_${FW}.efi ]]; then
+      [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${FW}.efi" || unset OUTPUTFN
+      USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}${LDR_USHR}/refind_${FW}.efi" "${LOCATION}/${OUTPUTFN}"
+    fi
+  done
+
+  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/refind.conf-sample" "${LDR_PATH}/refind.conf"
+  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/icons/svg/"* "${LDR_PATH}/icons/svg"
+  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/icons/"* "${LDR_PATH}/icons/"
+  USE_PRIVILEGE "${BIN[cp]}" -np "${OSCHROOT}${LDR_USHR}/fonts/"* "${LDR_PATH}/fonts/"
+
+  [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
+}
+
+function INSTALL_SYSTEMD_BOOT {
+  local LDR_PATH="${LDR_MTPT}/EFI/systemd"
+  local LDR_ULIB="${OSCHROOT}/usr/lib/systemd/boot/efi"
+
+  CHOOSE_EFI_STANDARD_OR_DEFAULT "${LDR_PATH}"
+  LOCATION="$(</tmp/selection)"
+
+  USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,Linux,systemd} \
+    "${LDR_MTPT}"/loader/entries
+
+  for FW in x64 ia32; do
+    if [[ -e ${LDR_ULIB}/systemd-boot${FW}.efi ]]; then
+      [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${FW}.efi" || unset OUTPUTFN
+      USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_ULIB}/systemd-boot${FW}.efi" "${LOCATION}/${OUTPUTFN}"
+    fi
+  done
+
+  [[ -e "${LDR_MTPT}/loader/random-seed" ]] || \
+    USE_PRIVILEGE "${BIN[dd]}" if=/dev/random of="${LDR_MTPT}/loader/random-seed" bs=512 count=1 > /dev/null 2>&1
+
+  [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
+}
+
 
 function SELECT_BOOTLOADER {
   #######################################################################
