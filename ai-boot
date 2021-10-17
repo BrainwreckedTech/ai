@@ -461,7 +461,7 @@ function INSTALL_EFI_TOOLS {
     USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellx64_v2.efi" "${LDR_MTPT}/EFI/shellx64.efi"
   fi
   if [[ -e ${OSCHROOT}/usr/lib/fwupd/efi/ ]]; then
-    USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/tools/"
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/EFI/tools/"
     USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/lib/fwupd/efi/fwupd"* "${LDR_MTPT}/EFI/tools/"
   fi
   if [[ -e ${OSCHROOT}/usr/share/memtest86-efi ]]; then
