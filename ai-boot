@@ -145,7 +145,7 @@ function CHOOSE_KCL_OPTIONS {
   for KRNL_OPT in "${SUGGESTS[@]}"; do
     "${BIN[grep]}" -qs "${KRNL_OPT}" /proc/cmdline && SELSTATE+=('on') || SELSTATE+=('off')
   done
-  
+
   IFS=$'\n' read -r -d '' -a UHKCLOPS < <(FIND_UNHANDLED_KCL_OPTIONS)
 
   for KRNL_OPT in "${UHKCLOPS[@]}"; do
@@ -203,7 +203,7 @@ function GET_ACTIVE_STANZA_NAMES_REFIND {
 
 function GET_BOOTLOADER_READABLE_PATH {
   local -a CANDIDATES; local CANDIDATE GREP_STR
-  
+
   case "${1}" in
            grub2) GREP_STR="\(btrfs\|ext[234]\|f2fs\|jfs\|nilfs\|ntfs\|reiser\|ufs\|vfat\|xfs\|zfs\)";;
           refind) GREP_STR="\(btrfs\|ext[234]\|hfs\|reiser\|vfat\)";;
@@ -499,7 +499,7 @@ function INSTALL_EFI_BOOT_ENTRY {
       esac
       ;;
   esac
-  
+
   case "${1}" in
     refind)
       EFI_PATH="/EFI/refind/refind_${SUFFIX}.efi"
@@ -633,7 +633,7 @@ function GENERATE_BOOT_STANZA {
   local OSR_NAME OSR_VRSN OSR_OSID
   local CPUMCODE MCODEIRD FULLPATH MIRD_IMG RIRD_IMG
   local -a KRNTYPES KRN_IMGS MIR_IMGS RIR_IMGS
-  
+
   IMG_MTPT="$(GET_BOOTLOADER_READABLE_PATH "${1}")"
   IMG_SBVL="$("${BIN[mount]}" | "${BIN[grep]}" "${IMG_MTPT}" | "${BIN[grep]}" subvol | "${BIN[sed]}" 's/.*subvol=\(.*\),.*/\1/g')"
   IMG_PATH="$(GET_IMAGES_PATH "${IMG_MTPT}")"
@@ -655,10 +655,10 @@ function GENERATE_BOOT_STANZA {
       fi
     fi
   fi
-  
+
   [[ -e ${OSCHROOT}/usr/share/plymouth ]] && \
     PLYMKCLP="splash loglevel=3 rd.udev.log_priority=3 rd.systemd.show_status=auto vt.global_cursor_default=0"
-  
+
   CHOOSE_KCL_OPTIONS || return 1
   ADDLKCLP="rw $(</tmp/selection)"
   ADDLKCLP="${ADDLKCLP//  / }"
@@ -790,7 +790,7 @@ function GENERATE_BOOT_STANZA_REFIND {
       done
       DESCRIPS[${LC}]="Place last, after ${ASTANZAS[$((LC-1))]}"
       SUGGESTS+=("${LC}")
-  
+
       ############################################################################
       BAKTITLE="rEFInd Boot Entry Placement"
       HELP_MSG="Select where to insert the new entry:"
@@ -798,7 +798,7 @@ function GENERATE_BOOT_STANZA_REFIND {
       DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
         "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
       SELECTED="$(</tmp/selection)"
-  
+
       if [[ ${SELECTED} -lt ${SUGGESTS[-1]} ]]; then
         EXSTANZA="$(GET_ACTIVE_STANZA_REFIND "${ASTANZAS[${SELECTED}]}")"
         EXSTANZA="${EXSTANZA//\\/\\\\}"
@@ -812,7 +812,7 @@ function GENERATE_BOOT_STANZA_REFIND {
         EXSTANZA="${EXSTANZA//$'\t'/\\t}"
         USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|${EXSTANZA}|${EXSTANZA}\n\n${BTSTANZA}|g" "${CFG_FILE}"
       fi
-  
+
     else
       EXSTANZA="$(GET_ACTIVE_STANZA_REFIND "${DESCRIPS[${SELECTED}]}")"
       EXSTANZA="${EXSTANZA//\\/\\\\}"
