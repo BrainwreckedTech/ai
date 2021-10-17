@@ -27,7 +27,7 @@ function DEFAULT_MOUNT_OPTIONS {
   # The purpose here is to build a regex string for sed to use to exclude the
   # default mount options that show up in `mount`
   local -a DFLTOPTS
-  
+
   # General default mount options
   DFLTOPTS+=('nodev')                 # do not interpret special devices on this filesystem
   DFLTOPTS+=('nosuid')                # do not honor set[ug]id bits on this filesystem
@@ -40,20 +40,22 @@ function DEFAULT_MOUNT_OPTIONS {
   DFLTOPTS+=('subvol=\/,')            # this is the default subvolume mounted
   DFLTOPTS+=('subvolid=[0-9]\+')      # ignore subvolids
   # F2FS
-  DFLTOPTS+=('lazytime')              # only update times on the cache version
-  DFLTOPTS+=('background_gc=on')      # garbage collection
-  DFLTOPTS+=('discard')               # real-time TRIM
-  DFLTOPTS+=('no_heap')               # disable heap-style segment allocation
   DFLTOPTS+=('acl')                   # enable POSIX access control list
-  DFLTOPTS+=('inline_data')           # write small files into the inode block
-  DFLTOPTS+=('inline_dentry')         # write small directories into the inode block
-  DFLTOPTS+=('flush_merge')           # merge concurrent cache flushes as much as possible
-  DFLTOPTS+=('extent_cache')          # enable an extent cache based on rb-tree
-  DFLTOPTS+=('mode=adaptive')         # block allocation mode
-  DFLTOPTS+=('active_logs=6')         # number of active logs
   DFLTOPTS+=('active_logs=6')         # number of active logs
   DFLTOPTS+=('alloc_mode=reuse')      # adjust block allocation policy to reuse
+  DFLTOPTS+=('background_gc=on')      # garbage collection
+  DFLTOPTS+=('discard')               # real-time TRIM
+  DFLTOPTS+=('checkpoint_merge')      #
+  DFLTOPTS+=('compress_log_size=2')   #
+  DFLTOPTS+=('compress_mode=fs')      #
+  DFLTOPTS+=('extent_cache')          # enable an extent cache based on rb-tree
+  DFLTOPTS+=('flush_merge')           # merge concurrent cache flushes as much as possible
   DFLTOPTS+=('fsync_mode=posix')      # follow POSIX semantics for syncing to disk
+  DFLTOPTS+=('inline_data')           # write small files into the inode block
+  DFLTOPTS+=('inline_dentry')         # write small directories into the inode block
+  DFLTOPTS+=('lazytime')              # only update times on the cache version
+  DFLTOPTS+=('mode=adaptive')         # block allocation mode
+  DFLTOPTS+=('no_heap')               # disable heap-style segment allocation
   DFLTOPTS+=('[nouseril]\+_xattr')    # disregard *_attr flags
   # FAT
   DFLTOPTS+=('codepage=437')          # default codepage
