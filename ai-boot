@@ -416,6 +416,7 @@ function CONFIGURE_REFIND {
             ;;
         esac
         [[ ${CFG_OPTN%:*} == banner ]] && TAG_VIEW='hidetags' || TAG_VIEW='showtags'
+        [[ ${#SUGGESTS[@]} -eq 0 ]] && continue
         DIALOG_SINGLE_SELECT "${TITLEBAR}" "${CFG_OPTN%:*}" "${TAG_VIEW}" "${EXISTCFG}" \
           "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
         ;;
@@ -440,7 +441,7 @@ function CONFIGURE_SYSTEMD_BOOT {
                       auto-entries:bool auto-firmware:bool random-seed-mode:select)
 
   for CFG_OPTN in "${LOOK_FOR[@]}"; do
-    EXISTCFG="$("${BIN[grep]}" "^${CFG_OPTN%:*}" "${CFG_FILE}" | ${BIN[sed]} 's/.*\s//g')"
+    EXISTCFG="$("${BIN[grep]}" -s "^${CFG_OPTN%:*}" "${CFG_FILE}" | ${BIN[sed]} 's/.*\s//g')"
     HELP_MSG="$(GET_OPTINFO_SYSTEMD_BOOT "${CFG_OPTN%:*}")"
     case "${CFG_OPTN#*:}" in
       bool)
