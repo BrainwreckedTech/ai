@@ -451,8 +451,6 @@ function INSTALL_EFI_BOOT_ENTRY {
 }
 
 function INSTALL_EFI_TOOLS {
-  local BOOT_LDR="${1}"
-
   if [[ -e ${OSCHROOT}/usr/share/edk2-shell ]]; then
     USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/ia32/Shell_Full.efi" "${LDR_MTPT}/EFI/shellia32.efi"
     USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/x64/Shell_Full.efi" "${LDR_MTPT}/EFI/shellx64.efi"
@@ -465,9 +463,8 @@ function INSTALL_EFI_TOOLS {
     USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/lib/fwupd/efi/fwupd"* "${LDR_MTPT}/EFI/tools/"
   fi
   if [[ -e ${OSCHROOT}/usr/share/memtest86-efi ]]; then
-    USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/memtest86/"
-    [[ ${BOOT_LDR} == refind ]] && DEST_DIR="tools" || DEST_DIR="memtest86"
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/memtest86-efi/"*.* "${LDR_MTPT}/EFI/${DEST_DIR}/"
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/EFI/tools/"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/memtest86-efi/"*.* "${LDR_MTPT}/EFI/tools/"
   fi
 }
 
