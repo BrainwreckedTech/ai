@@ -9,6 +9,8 @@ declare -r TITLEBAR="AI BOOT" ESP_GUID="$(GET_PARTITION_ID efisp)"
 declare OSCHROOT WIDEHACK="${GUI_WIDE}" ESPPARTS VALIDEFI
 declare LDR_MTPT LDR_BDEV LDR_BPTH LDR_DISK LDR_PNUM LDR_PTYP LDR_UUID IMG_VLID
 declare IMG_MTPT IMG_BDEV IMG_BPTH IMG_DISK IMG_PNUM IMG_PTYP IMG_UUID IMG_SBVL
+declare FULLPATH MIRD_IMG RIRD_IMG
+declare -a KRNTYPES KRN_IMGS MIR_IMGS RIR_IMGS
 
 ################################################################################
 # Overly-cautious verification of required binaries
@@ -594,8 +596,7 @@ function GENERATE_BOOT_STANZA {
   local RFS_BDEV RFS_SPEC RFS_FLGS
   local LUKS_DVC LUKSKCLP PLYMKCLP ADDLKCLP
   local OSR_NAME OSR_VRSN OSR_OSID
-  local CPUMCODE MCODEIRD FULLPATH MIRD_IMG RIRD_IMG
-  local -a KRNTYPES KRN_IMGS MIR_IMGS RIR_IMGS
+  local CPUMCODE MCODEIRD
 
   RFS_BDEV="$(GET_ROOT_BLOCK_DEVICE)"
   if [[ ${RFS_BDEV} =~ ^zfs ]]; then
@@ -633,32 +634,14 @@ function GENERATE_BOOT_STANZA {
   done
   MCODEIRD=${MCODEIRD% }
 
-  for FULLPATH in "${IMG_MTPT}"/vmlinuz-linux*; do
-    KRNTYPES+=("${FULLPATH#*vmlinuz-linux}")
-    KRNTYPES[-1]="${KRNTYPES[-1]#-}"
-    KRNTYPES[-1]="${KRNTYPES[-1]/lts/LTS}"
-    KRN_IMGS+=("${IMG_SBVL}${IMG_PATH}${FULLPATH#${IMG_MTPT}}")
-    if [[ -e ${FULLPATH/vmlinuz/initramfs}.img ]]; then
-      MIRD_IMG="${KRN_IMGS[-1]/vmlinuz/initramfs}.img"
-    fi; if [[ -e ${FULLPATH/vmlinuz/initramfs}-fallback.img ]]; then
-      RIRD_IMG="${KRN_IMGS[-1]/vmlinuz/initramfs}-fallback.img"
-      [[ -z ${MIRD_IMG} ]] && MIRD_IMG="${RIRD_IMG}"
-    fi
-    [[ -z ${RIRD_IMG} ]] && RIRD_IMG="${MIRD_IMG}"
-    MIR_IMGS+=("${MIRD_IMG}")
-    RIR_IMGS+=("${RIRD_IMG}")
-  done
-
   case "${1}" in
     refind)
       GENERATE_BOOT_STANZA_REFIND "${OSR_NAME}" "${OSR_VRSN}" "${OSR_OSID}" \
-        'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${RFS_SPEC}" \
-        "${RFS_FLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
+        "${RFS_SPEC}" "${RFS_FLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
       ;;
     systemd-boot)
       GENERATE_BOOT_STANZA_SYSTEMD_BOOT "${OSR_NAME}" "${OSR_VRSN}" "${OSR_OSID}" \
-        'KRNTYPES' 'KRN_IMGS' 'MIR_IMGS' 'RIR_IMGS' "${RFS_SPEC}" \
-        "${RFS_FLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
+        "${RFS_SPEC}" "${RFS_FLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
       ;;
   esac
 }
@@ -667,16 +650,12 @@ function GENERATE_BOOT_STANZA_REFIND {
   [[ -n "${1}" ]] && local OSR_NAME="${1}" || unset OSR_NAME
   [[ -n "${2}" ]] && local OSR_VRSN="${2}" || unset OSR_VRSN
   [[ -n "${3}" ]] && local OSR_OSID="${3}" || unset OSR_OSID
-  local -n KRNLTYPE="${4}"
-  local -n KRNLIMGS="${5}"
-  local -n MAINIRDS="${6}"
-  local -n RESCIRDS="${7}"
-  [[ -n "${8}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
-  [[ -n "${9}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
-  [[ -n "${10}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
-  [[ -n "${11}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
-  [[ -n "${12}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
-  [[ -n "${13}" ]] && local MCODEIRD="initrd=${14}" && MCODEIRD="${MCODEIRD/ / initrd=}" || unset MCODEIRD
+  [[ -n "${4}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
+  [[ -n "${5}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
+  [[ -n "${6}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
+  [[ -n "${7}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
+  [[ -n "${8}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
+  [[ -n "${9}" ]] && local MCODEIRD="initrd=${14}" && MCODEIRD="${MCODEIRD/ / initrd=}" || unset MCODEIRD
   local CFG_FILE USETHEME BAKTITLE HELP_MSG DFLTSLCT SELECTED BTSTANZA EXSTANZA STNZATTL
   local -a ASTANZAS SUGGESTS DESCRIPS
   local -i LC
@@ -686,12 +665,12 @@ function GENERATE_BOOT_STANZA_REFIND {
   USETHEME="/EFI/refind/$(</tmp/selection)/icons"
   USETHEME="${USETHEME%/default}"
 
-  for (( LC=0 ; LC<${#KRNLIMGS[@]} ; LC++ )); do
-    BTSTANZA="menuentry \"${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNLTYPE+ }${KRNLTYPE^}\" {\n"
+  for (( LC=0 ; LC<${#KRN_IMGS[@]} ; LC++ )); do
+    BTSTANZA="menuentry \"${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNTYPES[${LC}]+ }${KRNTYPES[${LC}]^}\" {\n"
     BTSTANZA+="\ticon\t${USETHEME}/os_${OSR_OSID}.png\n"
     BTSTANZA+="\tvolume\t${IMG_PLBL:-${IMG_UUID}}\n"
-    BTSTANZA+="\tloader\t${KRNLIMGS[${LC}]}\n"
-    [[ -n ${MAINIRDS[${LC}]} ]] && BTSTANZA+="\tinitrd\t${MAINIRDS[${LC}]}\n"
+    BTSTANZA+="\tloader\t${KRN_IMGS[${LC}]}\n"
+    [[ -n ${MIR_IMGS[${LC}]} ]] && BTSTANZA+="\tinitrd\t${MIR_IMGS[${LC}]}\n"
     BTSTANZA+="\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
     if [[ ${ADDLKCLP} =~ quiet ]]; then
       STNZATTL='Verbose startup'
@@ -705,15 +684,15 @@ function GENERATE_BOOT_STANZA_REFIND {
       BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+='\t}\n'
     fi
-    if [[ ${MAINIRDS[${LC}]} != "${RESCIRDS[${LC}]}" ]] && [[ -n ${RESCIRDS[${LC}]} ]]; then
+    if [[ ${MIR_IMGS[${LC}]} != "${RIR_IMGS[${LC}]}" ]] && [[ -n ${RIR_IMGS[${LC}]} ]]; then
       BTSTANZA+='\tsubmenuentry "Boot with fallback InitRAMFS" {\n'
-      BTSTANZA+="\t\tinitrd\t${RESCIRDS[${LC}]}\n"
+      BTSTANZA+="\t\tinitrd\t${RIR_IMGS[${LC}]}\n"
       BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+='\t}\n'
     fi
     BTSTANZA+='\tsubmenuentry "Boot to systemd rescue.target" {\n'
-    [[ -n ${RESCIRDS[${LC}]} ]] && BTSTANZA+="\t\tinitrd ${RESCIRDS[${LC}]}\n"
-    BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}  systemd.unit=rescue.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+    [[ -n ${RIR_IMGS[${LC}]} ]] && BTSTANZA+="\t\tinitrd ${RIR_IMGS[${LC}]}\n"
+    BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
     BTSTANZA+='\t}\n'
     BTSTANZA+='}'
   done
@@ -722,7 +701,7 @@ function GENERATE_BOOT_STANZA_REFIND {
   DESCRIPS+=("${ASTANZAS[@]}" '[create new entry]')
   for (( LC=0 ; LC<${#DESCRIPS[@]} ; LC++ )); do
     SUGGESTS+=("${LC}")
-    if [[ ${DESCRIPS[${LC}]} == ${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNLTYPE+ }${KRNLTYPE^} ]]; then
+    if [[ ${DESCRIPS[${LC}]} == ${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNTYPES[${LC}]+ }${KRNTYPES[${LC}]^} ]]; then
       DFLTSLCT="${LC}"
     fi
   done
@@ -787,29 +766,25 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
   [[ -n "${1}" ]] && local OSR_NAME="${1}" || unset OSR_NAME
   [[ -n "${2}" ]] && local OSR_VRSN="${2}" || unset OSR_VRSN
   [[ -n "${3}" ]] && local OSR_OSID="${3}" || unset OSR_OSID
-  local -n KRNLTYPE="${4}"
-  local -n KRNLIMGS="${5}"
-  local -n MAINIRDS="${6}"
-  local -n RESCIRDS="${7}"
-  [[ -n "${8}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
-  [[ -n "${9}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
-  [[ -n "${10}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
-  [[ -n "${11}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
-  [[ -n "${12}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
-  [[ -n "${13}" ]] && local MCODEIRD="initrd\t${14}" && MCODEIRD="${MCODEIRD/ /\\ninitrd\\n}" || unset MCODEIRD
+  [[ -n "${4}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
+  [[ -n "${5}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
+  [[ -n "${6}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
+  [[ -n "${7}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
+  [[ -n "${8}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
+  [[ -n "${9}" ]] && local MCODEIRD="initrd\t${14}" && MCODEIRD="${MCODEIRD/ /\\ninitrd\\n}" || unset MCODEIRD
   local CFG_FILE BAKTITLE HELP_MSG SELECTED BTSTANZA EXSTANZA STNZATTL
   local -a ASTANZAS SUGGESTS DESCRIPS DISP_MGR SAME_IRD
   local -i LC
 
   CNFG_DIR="${LDR_MTPT}/loader/entries"
   DISP_MGR="${OSCHROOT}/etc/systemd/system/display-manager.service"
-  [[ ${MAINIRDS[${LC}]} == "${RESCIRDS[${LC}]}" ]] && SAME_IRD=true || SAME_IRD=false
+  [[ ${MIR_IMGS[${LC}]} == "${RIR_IMGS[${LC}]}" ]] && SAME_IRD=true || SAME_IRD=false
 
-  for (( LC=0 ; LC<${#KRNLIMGS[@]} ; LC++ )); do
+  for (( LC=0 ; LC<${#KRN_IMGS[@]} ; LC++ )); do
     for CFG_TYPE in common gabby nogui oops rescue; do
       [[ ! -e ${DISP_MGR} ]] && [[ ${CFG_TYPE} == nogui ]] && continue
       [[ ! ${ADDLKCLP} =~ quiet ]] && [[ ${CFG_TYPE} == verbose ]] && continue
-      [[ -z ${RESCIRDS[${LC}]} ]] || [[ ${CFG_TYPE} == oops ]] && ${SAME_IRD} && continue
+      [[ -z ${RIR_IMGS[${LC}]} ]] || [[ ${CFG_TYPE} == oops ]] && ${SAME_IRD} && continue
       case "${CFG_TYPE}" in
         common) TCFGTYPE="Normal";;
          gabby) [[ -z ${PLMTHKCL} ]] && TCFGTYPE="Verbose" || TCFGTYPE="No Splash & Verbose";;
@@ -817,14 +792,14 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
           oops) TCFGTYPE="Fallback";;
         rescue) TCFGTYPE="Rescue";;
       esac
-      BTSTANZA="title\t${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNLTYPE+ }${KRNLTYPE^} ${TCFGTYPE}\n"
-      BTSTANZA+="linux\t${KRNLIMGS[${LC}]}\n"
+      BTSTANZA="title\t${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNTYPES[${LC}]+ }${KRNTYPES[${LC}]^} ${TCFGTYPE}\n"
+      BTSTANZA+="linux\t${KRN_IMGS[${LC}]}\n"
       [[ -n ${MCODEIRD} ]] && BTSTANZA+="${MCODEIRD}\n"
       case "${CFG_TYPE}" in
         common|gabby|nogui)
-          [[ -n ${MAINIRDS[${LC}]} ]] && BTSTANZA+="initrd\t${MAINIRDS[${LC}]}\n";;
+          [[ -n ${MIR_IMGS[${LC}]} ]] && BTSTANZA+="initrd\t${MIR_IMGS[${LC}]}\n";;
         oops|rescue)
-          [[ -n ${RESCIRDS[${LC}]} ]] && BTSTANZA+="initrd\t${RESCIRDS[${LC}]}\n";;
+          [[ -n ${RIR_IMGS[${LC}]} ]] && BTSTANZA+="initrd\t${RIR_IMGS[${LC}]}\n";;
       esac
       case "${CFG_TYPE}" in
         common)
@@ -836,7 +811,7 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
         rescue)
           BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target\n";;
       esac
-      USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/${OSR_OSID}-${KRNLTYPE,,}-${CFG_TYPE}.conf'"
+      USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/${OSR_OSID}-${KRNTYPES[${LC}],,}-${CFG_TYPE}.conf'"
     done
   done
 
@@ -971,6 +946,26 @@ IMG_UUID="$("${BIN[lsblk]}" -lno NAME,PARTUUID | "${BIN[grep]}" "${IMG_BDEV##*/}
 IMG_PLBL="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${IMG_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
 IMG_SBVL="$("${BIN[mount]}" | "${BIN[grep]}" "on ${IMG_MTPT} type" | "${BIN[grep]}" subvol | "${BIN[sed]}" 's/.*subvol=\(.*\),.*/\1/g')"
 IMG_BPTH="${IMG_SBVL}${IMG_PATH#${IMG_MTPT}}"
+
+################################################################################
+# KERNEL AND INITRAMFS ENUMERATION
+################################################################################
+
+for FULLPATH in "${IMG_PATH}"/vmlinuz-linux*; do
+  KRNTYPES+=("${FULLPATH#*vmlinuz-linux}")
+  KRNTYPES[-1]="${KRNTYPES[-1]#-}"
+  KRNTYPES[-1]="${KRNTYPES[-1]/lts/LTS}"
+  KRN_IMGS+=("${IMG_BPTH}${FULLPATH#${IMG_PATH}}")
+  if [[ -e ${FULLPATH/vmlinuz/initramfs}.img ]]; then
+    MIRD_IMG="${KRN_IMGS[-1]/vmlinuz/initramfs}.img"
+  fi; if [[ -e ${FULLPATH/vmlinuz/initramfs}-fallback.img ]]; then
+    RIRD_IMG="${KRN_IMGS[-1]/vmlinuz/initramfs}-fallback.img"
+    [[ -z ${MIRD_IMG} ]] && MIRD_IMG="${RIRD_IMG}"
+  fi
+  [[ -z ${RIRD_IMG} ]] && RIRD_IMG="${MIRD_IMG}"
+  MIR_IMGS+=("${MIRD_IMG}")
+  RIR_IMGS+=("${RIRD_IMG}")
+done
 
 while true; do
   SELECT_BOOTLOADER || break
