@@ -12,6 +12,7 @@ declare IMG_MTPT IMG_BDEV IMG_BPTH IMG_DISK IMG_PNUM IMG_PTYP IMG_UUID IMG_SBVL
 declare FULLPATH MIRD_IMG RIRD_IMG
 declare -a KRNTYPES KRN_IMGS MIR_IMGS RIR_IMGS
 declare CPUMCODE MCODEIRD FULLPATH MIRD_IMG RIRD_IMG
+declare RFS_TYPE RFS_BDEV RFS_SPEC RFS_UUID RFS_FLBL RFS_FLGS
 
 ################################################################################
 # Overly-cautious verification of required binaries
@@ -206,12 +207,6 @@ function GET_ACTIVE_STANZA_NAMES_REFIND {
   "${BIN[sed]}" 's/menuentry //g;s/[ \t]*{.*$//g' | "${BIN[tr]}" -d '"'
 }
 
-function GET_KCL_ROOT_FLAGS {
-  "${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type" | \
-    "${BIN[sed]}" 's/.*(\(.*\))/\1/g' | "${BIN[sed]}" "s/$(DEFAULT_MOUNT_OPTIONS)//g;s/,$//g"
-
-}
-
 function GET_LUKS_KCL {
   DUMPINFO="$(USE_PRIVILEGE /sbin/cryptsetup luksDump "${1}")"
   LUKSUUID="$("${BIN[grep]}" 'UUID' <<< "${DUMPINFO}" | "${BIN[sed]}" 's/.*\s\+//g')"
@@ -284,38 +279,6 @@ function GET_OPTINFO_SYSTEMD_BOOT {
       ;;
   esac
 
-}
-
-function GET_ROOT_BLOCK_DEVICE {
-  local FSYSTYPE
-  FSYSTYPE="$("${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type" | "${BIN[cut]}" -d\  -f5)"
-  if [[ ${FSYSTYPE} == zfs ]]; then
-    printf 'zfs='
-    "${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type zfs" | "${BIN[cut]}" -d\  -f1
-  else
-    "${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type" | "${BIN[cut]}" -d\  -f1
-  fi
-}
-
-function GET_ROOT_KCL {
-  local PRT_UUID PRTLABEL
-  PRT_UUID="$("${BIN[lsblk]}" -lno NAME,UUID | "${BIN[grep]}" "${1##*/}" | "${BIN[sed]}" 's/.* //g')"
-  PRTLABEL="$("${BIN[lsblk]}" -lno NAME,LABEL | "${BIN[grep]}" "${1##*/}" | "${BIN[sed]}" 's/.* //g')"
-  if [[ -n ${PRTLABEL} ]]; then
-    echo "root=LABEL=${PRTLABEL}"
-  elif [[ -n ${PRT_UUID} ]]; then
-    echo "root=UUID=${PRT_UUID}"
-  else
-    echo "root=${BLOCKDEV}"
-  fi
-}
-
-function GET_VOLUME_ID {
-  local BLOCKDEV PARTUUID PARTNAME
-  BLOCKDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${1} type" | "${BIN[cut]}" -d\  -f1  | "${BIN[sed]}" 's|/dev/||g')"
-  PARTUUID="$("${BIN[lsblk]}" -lno NAME,PARTUUID | "${BIN[grep]}" "${BLOCKDEV}" | "${BIN[sed]}" 's/.* //g')"
-  PARTNAME="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${BLOCKDEV}" | "${BIN[sed]}" 's/.* //g')"
-  [[ -n ${PARTNAME} ]] && echo "\"${PARTNAME}\"" || echo "${PARTUUID}"
 }
 
 function CONFIGURE_REFIND {
@@ -594,17 +557,9 @@ function INSTALL_SYSTEMD_BOOT {
 }
 
 function GENERATE_BOOT_STANZA {
-  local RFS_BDEV RFS_SPEC RFS_FLGS
   local LUKS_DVC LUKSKCLP PLYMKCLP ADDLKCLP
   local OSR_NAME OSR_VRSN OSR_OSID
 
-  RFS_BDEV="$(GET_ROOT_BLOCK_DEVICE)"
-  if [[ ${RFS_BDEV} =~ ^zfs ]]; then
-    RFS_SPEC="${RFS_BDEV}"
-  else
-    RFS_SPEC="$(GET_ROOT_KCL "${RFS_BDEV}")"
-    RFS_FLGS="rootflags=$(GET_KCL_ROOT_FLAGS)"
-  fi
   if [[ ${RFS_BDEV} =~ /dev/mapper ]]; then
     GET_PRIVILEGE
     LUKS_DVC="$(USE_PRIVILEGE /sbin/cryptsetup status "${RFS_BDEV##*/}" | "${BIN[grep]}" 'device:' | "${BIN[sed]}" 's/.* //g')"
@@ -631,13 +586,9 @@ function GENERATE_BOOT_STANZA {
 
   case "${1}" in
     refind)
-      GENERATE_BOOT_STANZA_REFIND "${RFS_SPEC}" "${RFS_FLGS}" \
-        "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
-      ;;
+      GENERATE_BOOT_STANZA_REFIND       "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}";;
     systemd-boot)
-      GENERATE_BOOT_STANZA_SYSTEMD_BOOT "${RFS_SPEC}" "${RFS_FLGS}" \
-        "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
-      ;;
+      GENERATE_BOOT_STANZA_SYSTEMD_BOOT "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}";;
   esac
 }
 
@@ -645,11 +596,9 @@ function GENERATE_BOOT_STANZA_REFIND {
   [[ -n "${1}" ]] && local OSR_NAME="${1}" || unset OSR_NAME
   [[ -n "${2}" ]] && local OSR_VRSN="${2}" || unset OSR_VRSN
   [[ -n "${3}" ]] && local OSR_OSID="${3}" || unset OSR_OSID
-  [[ -n "${4}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
-  [[ -n "${5}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
-  [[ -n "${6}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
-  [[ -n "${7}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
-  [[ -n "${8}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
+  [[ -n "${4}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
+  [[ -n "${5}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
+  [[ -n "${6}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
   local CFG_FILE USETHEME BAKTITLE HELP_MSG DFLTSLCT SELECTED BTSTANZA EXSTANZA STNZATTL
   local -a ASTANZAS SUGGESTS DESCRIPS
   local -i LC
@@ -760,11 +709,9 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
   [[ -n "${1}" ]] && local OSR_NAME="${1}" || unset OSR_NAME
   [[ -n "${2}" ]] && local OSR_VRSN="${2}" || unset OSR_VRSN
   [[ -n "${3}" ]] && local OSR_OSID="${3}" || unset OSR_OSID
-  [[ -n "${4}"  ]] && local RFS_SPEC="${9}" || unset RFS_SPEC
-  [[ -n "${5}" ]] && local RFS_FLGS="${10}" || unset RFS_FLGS
-  [[ -n "${6}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
-  [[ -n "${7}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
-  [[ -n "${8}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
+  [[ -n "${4}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
+  [[ -n "${5}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
+  [[ -n "${6}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
   local CFG_FILE BAKTITLE HELP_MSG SELECTED BTSTANZA EXSTANZA STNZATTL
   local -a ASTANZAS SUGGESTS DESCRIPS DISP_MGR SAME_IRD
   local -i LC
@@ -968,6 +915,28 @@ for CPUMCODE in amd-ucode.img intel-ucode.img; do
   [[ -e ${IMG_PATH}/${CPUMCODE} ]] && MCODEIRD+="${IMG_BPTH}/${CPUMCODE} "
 done
 [[ -n ${MCODEIRD} ]] && MCODEIRD="${MCODEIRD% }"
+
+################################################################################
+# ROOT FILESYSTEM INFORMATION
+################################################################################
+
+RFS_TYPE="$("${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type" | "${BIN[cut]}" -d\  -f5)"
+RFS_BDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type ${RFS_TYPE}" | "${BIN[cut]}" -d\  -f1)"
+if [[ ${RFS_TYPE} == zfs ]]; then
+  RFS_SPEC="zfs=${RFS_BDEV}"
+else
+  RFS_UUID="$("${BIN[lsblk]}" -lno NAME,UUID | "${BIN[grep]}" "${RFS_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+  RFS_FLBL="$("${BIN[lsblk]}" -lno NAME,LABEL | "${BIN[grep]}" "${RFS_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+  if [[ -n ${RFS_FLBL} ]]; then
+    RFS_SPEC="root=LABEL=${RFS_FLBL}"
+  elif [[ -n ${RFS_UUID} ]]; then
+    RFS_SPEC="root=UUID=${RFS_UUID}"
+  else
+    RFS_SPEC="root=${RFS_BDEV}"
+  fi
+  RFS_FLGS="rootflags=$("${BIN[mount]}" | "${BIN[grep]}" "on ${OSCHROOT:-/} type" | \
+    "${BIN[sed]}" 's/.*(\(.*\))/\1/g' | "${BIN[sed]}" "s/$(DEFAULT_MOUNT_OPTIONS)//g;s/,$//g")"
+fi
 
 while true; do
   SELECT_BOOTLOADER || break
