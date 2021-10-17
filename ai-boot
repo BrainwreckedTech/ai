@@ -6,7 +6,7 @@ source "${0%/*}/ai-funcs"
 # Here are more global variables to share amongst functions
 ################################################################################
 declare -r TITLEBAR="AI BOOT" ESP_GUID="$(GET_PARTITION_ID efisp)"
-declare EFISPDIR ESP_BDEV ESP_DISK ESP_PART OSCHROOT WIDEHACK="${GUI_WIDE}"
+declare LDR_MTPT LDR_BDEV LDR_DISK LDR_PART OSCHROOT WIDEHACK="${GUI_WIDE}"
 
 ################################################################################
 # Overly-cautious verification of required binaries
@@ -116,7 +116,7 @@ function ASK_REFIND_THEME {
   ##############################################################################
   local -a RFTHEMES
 
-  IFS=$'\n' read -r -d '' -a RFTHEMES < <("${BIN[find]}" "${EFISPDIR}/EFI/refind" -mindepth 2 -type d -name 'icons' | "${BIN[sed]}" "s|${EFISPDIR}/EFI/refind/\(.*\)/icons|\1|g")
+  IFS=$'\n' read -r -d '' -a RFTHEMES < <("${BIN[find]}" "${LDR_MTPT}/EFI/refind" -mindepth 2 -type d -name 'icons' | "${BIN[sed]}" "s|${LDR_MTPT}/EFI/refind/\(.*\)/icons|\1|g")
   [[ ${#RFTHEMES[@]} -eq 0 ]] && echo 'default' > /tmp/selection && return 0
   RFTHEMES+=('default')
 
@@ -185,14 +185,14 @@ function FIND_UNHANDLED_KCL_OPTIONS {
 function GET_ACTIVE_STANZA_REFIND {
   local GREP_STR CFG_FILE
   GREP_STR="menuentry\s+\"?${1}\"?\s+{\n([[:print:]\t]+(?<!disabled)\n)+}\n"
-  CFG_FILE="${EFISPDIR}/EFI/refind/refind.conf"
+  CFG_FILE="${LDR_MTPT}/EFI/refind/refind.conf"
   "${BIN[grep]}" -Pzo "${GREP_STR}" "${CFG_FILE}" | "${BIN[tr]}" -d '\0'
 }
 
 function GET_ACTIVE_STANZA_NAMES_REFIND {
   local GREP_STR CFG_FILE
   GREP_STR="menuentry\s+\"?[[:alnum:] ]+\"?\s+{\n([[:print:]\t]+(?<!disabled)\n)+}\n"
-  CFG_FILE="${EFISPDIR}/EFI/refind/refind.conf"
+  CFG_FILE="${LDR_MTPT}/EFI/refind/refind.conf"
   "${BIN[grep]}" -Pzo "${GREP_STR}" "${CFG_FILE}" | "${BIN[tr]}" -d '\0' | \
   "${BIN[grep]}" -P 'menuentry(?<!submenuentry)' | \
   "${BIN[sed]}" 's/menuentry //g;s/[ \t]*{.*$//g' | "${BIN[tr]}" -d '"'
@@ -263,7 +263,7 @@ function GET_REFIND_OPTINFO {
   # whitespace character always following an option name
   [[ ${CFG_OPTN} == banner ]] && CFG_OPTN='banner\s'
 
-  "${BIN[grep]}" -Pzo "(?s)\n(#[^\n]*\n)*#?${CFG_OPTN}[^\n]*\n" "${EFISPDIR}/EFI/refind/refind.conf" | \
+  "${BIN[grep]}" -Pzo "(?s)\n(#[^\n]*\n)*#?${CFG_OPTN}[^\n]*\n" "${LDR_MTPT}/EFI/refind/refind.conf" | \
     "${BIN[tr]}" -d '\0' | "${BIN[grep]}" '^# ' | \
     "${BIN[sed]}" "s/# //g;s/'/'\\\''/g" | \
     "${BIN[sed]}" ':a;N;$!ba;s/\n \{3,\}/ /g;s/what\norder/what order/g;s/all\nOSes/all OSes/g;s/the\nEFI/the EFI/g;s/\n\([a-z(]\+\)/ \1/g;s/\n\([A-Z(]\+\)/\n\n\1/g;' | \
@@ -350,7 +350,7 @@ function GET_VOLUME_ID {
 }
 
 function CONFIGURE_REFIND {
-  local CFG_OPTN EXISTCFG BTLDRCFG="${EFISPDIR}/EFI/refind/refind.conf"
+  local CFG_OPTN EXISTCFG BTLDRCFG="${LDR_MTPT}/EFI/refind/refind.conf"
   local SUGGESTS DESCRIPS SELSTATE
   local -ra LOOK_FOR=(timeout:range use_nvram:bool banner:select textonly:bool
                       textmode:select resolution:text use_graphics_for:multi
@@ -430,7 +430,7 @@ function CONFIGURE_REFIND {
 }
 
 function CONFIGURE_SYSTEMD_BOOT {
-  local CFG_OPTN EXISTCFG BTLDRCFG="${EFISPDIR}/loader/loader.conf"
+  local CFG_OPTN EXISTCFG BTLDRCFG="${LDR_MTPT}/loader/loader.conf"
   local -ra LOOK_FOR=(default:select timeout:range console-mode:select editor:bool
                       auto-entries:bool auto-firmware:bool random-seed-mode:select)
 
@@ -448,8 +448,8 @@ function CONFIGURE_SYSTEMD_BOOT {
       select)
         case "${CFG_OPTN%:*}" in
           default)
-            IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${EFISPDIR}"/loader/entries -name '*.conf' | "${BIN[sed]}" 's|.*/||g' | "${BIN[sort]}")
-            IFS=$'\n' read -r -d '' -a DESCRIPS < <("${BIN[grep]}" '^title' "${EFISPDIR}"/loader/entries/*.conf | ${BIN[sort]} | "${BIN[sed]}" 's/.*title\s\+//g')
+            IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${LDR_MTPT}"/loader/entries -name '*.conf' | "${BIN[sed]}" 's|.*/||g' | "${BIN[sort]}")
+            IFS=$'\n' read -r -d '' -a DESCRIPS < <("${BIN[grep]}" '^title' "${LDR_MTPT}"/loader/entries/*.conf | ${BIN[sort]} | "${BIN[sed]}" 's/.*title\s\+//g')
             ;;
           console-mode)
             SUGGESTS=(0 1 2 auto max keep)
@@ -507,8 +507,8 @@ function INSTALL_EFI_BOOT_ENTRY {
   CURRENT="$("${BIN[efibootmgr]}" -v)"
 
   shopt -s nocasematch
-  if ! [[ ${CURRENT} =~ ${BT_LABEL}.*${ESP_UUID}.*${EFI_PATH//\//\\\\} ]]; then
-    USE_PRIVILEGE "${BIN[efibootmgr]}" --quiet --create --disk "${ESP_DISK}" --part "${ESP_PART#p}" --loader "${EFI_PATH}" --label "${BT_LABEL}"
+  if ! [[ ${CURRENT} =~ ${BT_LABEL}.*${LDR_UUID}.*${EFI_PATH//\//\\\\} ]]; then
+    USE_PRIVILEGE "${BIN[efibootmgr]}" --quiet --create --disk "${LDR_DISK}" --part "${LDR_PART#p}" --loader "${EFI_PATH}" --label "${BT_LABEL}"
   fi
   shopt -u nocasematch
   set +x
@@ -518,20 +518,20 @@ function INSTALL_EFI_TOOLS {
   local BOOT_LDR="${1}"
 
   if [[ -e ${OSCHROOT}/usr/share/edk2-shell ]]; then
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/ia32/Shell_Full.efi" "${EFISPDIR}/EFI/shellia32.efi"
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/x64/Shell_Full.efi" "${EFISPDIR}/EFI/shellx64.efi"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/ia32/Shell_Full.efi" "${LDR_MTPT}/EFI/shellia32.efi"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/edk2-shell/x64/Shell_Full.efi" "${LDR_MTPT}/EFI/shellx64.efi"
   elif  [[ -e ${OSCHROOT}/usr/uefi/edk2-shell ]]; then
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellia32_v2.efi" "${EFISPDIR}/EFI/shellia32.efi"
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellx64_v2.efi" "${EFISPDIR}/EFI/shellx64.efi"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellia32_v2.efi" "${LDR_MTPT}/EFI/shellia32.efi"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/uefi-shell/shellx64_v2.efi" "${LDR_MTPT}/EFI/shellx64.efi"
   fi
   if [[ -e ${OSCHROOT}/usr/lib/fwupd/efi/ ]]; then
-    USE_PRIVILEGE "${BIN[mkdir]}" -p "${EFISPDIR}/tools/"
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/lib/fwupd/efi/fwupd"* "${EFISPDIR}/EFI/tools/"
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/tools/"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/lib/fwupd/efi/fwupd"* "${LDR_MTPT}/EFI/tools/"
   fi
   if [[ -e ${OSCHROOT}/usr/share/memtest86-efi ]]; then
-    USE_PRIVILEGE "${BIN[mkdir]}" -p "${EFISPDIR}/memtest86/"
+    USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/memtest86/"
     [[ ${BOOT_LDR} == refind ]] && DEST_DIR="tools" || DEST_DIR="memtest86"
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/memtest86-efi/"*.* "${EFISPDIR}/EFI/${DEST_DIR}/"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/memtest86-efi/"*.* "${LDR_MTPT}/EFI/${DEST_DIR}/"
   fi
 }
 
@@ -570,14 +570,14 @@ function INSTALL_HOOK_SYSTEMDBOOT {
 }
 
 function INSTALL_REFIND {
-  local BTLDRESP="${EFISPDIR}/EFI/refind"
+  local BTLDRESP="${LDR_MTPT}/EFI/refind"
   local BTLDRUSR="/usr/share/refind"
   local LOCATION OUTPUTFN
 
   ASK_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
   LOCATION="$(</tmp/selection)"
 
-  USE_PRIVILEGE "${BIN[mkdir]}" -p "${EFISPDIR}"/EFI/{Boot,refind/icons,refind/fonts}
+  USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,refind/icons,refind/fonts}
 
   for FW in x64 ia32; do
     if [[ -e ${OSCHROOT}${BTLDRUSR}/drivers_${FW} ]]; then
@@ -598,14 +598,14 @@ function INSTALL_REFIND {
 }
 
 function INSTALL_SYSTEMD_BOOT {
-  local BTLDRESP="${EFISPDIR}/EFI/systemd"
+  local BTLDRESP="${LDR_MTPT}/EFI/systemd"
   local BTLDRUSR="/usr/lib/systemd/boot"
 
   ASK_EFI_STANDARD_OR_DEFAULT "${BTLDRESP}"
   LOCATION="$(</tmp/selection)"
 
-  USE_PRIVILEGE "${BIN[mkdir]}" -p "${EFISPDIR}"/EFI/{Boot,Linux,systemd} \
-    "${EFISPDIR}"/loader/entries
+  USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}"/EFI/{Boot,Linux,systemd} \
+    "${LDR_MTPT}"/loader/entries
 
   for FW in x64 ia32; do
     if [[ -e ${OSCHROOT}${BTLDRUSR}/systemd-boot${FW}.efi ]]; then
@@ -616,8 +616,8 @@ function INSTALL_SYSTEMD_BOOT {
 
   [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
 
-  [[ -e "${EFISPDIR}/loader/random-seed" ]] || \
-    USE_PRIVILEGE "${BIN[dd]}" if=/dev/random of="${EFISPDIR}/loader/random-seed" bs=512 count=1 > /dev/null 2>&1
+  [[ -e "${LDR_MTPT}/loader/random-seed" ]] || \
+    USE_PRIVILEGE "${BIN[dd]}" if=/dev/random of="${LDR_MTPT}/loader/random-seed" bs=512 count=1 > /dev/null 2>&1
 }
 
 function GENERATE_BOOT_STANZA {
@@ -716,7 +716,7 @@ function GENERATE_BOOT_STANZA_REFIND {
   local -a ASTANZAS SUGGESTS DESCRIPS
   local -i LC
 
-  CFG_FILE="${EFISPDIR}/EFI/refind/refind.conf"
+  CFG_FILE="${LDR_MTPT}/EFI/refind/refind.conf"
   ASK_REFIND_THEME
   USETHEME="/EFI/refind/$(</tmp/selection)/icons"
   USETHEME="${USETHEME%/default}"
@@ -837,7 +837,7 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
   local -a ASTANZAS SUGGESTS DESCRIPS DISP_MGR SAME_IRD
   local -i LC
 
-  CNFG_DIR="${EFISPDIR}/loader/entries"
+  CNFG_DIR="${LDR_MTPT}/loader/entries"
   DISP_MGR="${OSCHROOT}/etc/systemd/system/display-manager.service"
   [[ ${MAINIRDS[${LC}]} == "${RESCIRDS[${LC}]}" ]] && SAME_IRD=true || SAME_IRD=false
 
@@ -876,17 +876,17 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
     done
   done
 
-  if [[ -e ${EFISPDIR}/EFI/tools/fwupdx64.efi ]]; then
+  if [[ -e ${LDR_MTPT}/EFI/tools/fwupdx64.efi ]]; then
     BTSTANZA="title\tFirmware Update\n"
     BTSTANZA+="efi\t/EFI/tools/fwupdx64.efi\n"
     USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-fwupdate.conf'"
   fi
 
-  if [[ -e ${EFISPDIR}/EFI/memtest86/memtest86.efi ]]; then
+  if [[ -e ${LDR_MTPT}/EFI/memtest86/memtest86.efi ]]; then
     BTSTANZA="title\tMemTest86\n"
     BTSTANZA+="efi\t/EFI/memtest86/memtest86.efi"
     USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-memtest86.conf'"
-  elif [[ -e ${EFISPDIR}/EFI/tools/memtest86.efi ]]; then
+  elif [[ -e ${LDR_MTPT}/EFI/tools/memtest86.efi ]]; then
     BTSTANZA="title\tMemTest86\n"
     BTSTANZA+="efi\t/EFI/tools/memtest86.efi"
     USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-memtest86.conf'"
@@ -923,12 +923,12 @@ MOUNTPNT="$(GET_ESP_MOUNTPOINT)"
 [[ -z ${MOUNTPNT} ]] && echo 'No EFI System Partition found on this machine' && exit 1
 [[ ${MOUNTPNT} =~ [[:blank:]] ]] && echo 'Multiple ESP mount points found.' && exit 1
 
-EFISPDIR="${MOUNTPNT}"
-ESP_BDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${EFISPDIR} type" | "${BIN[cut]}" -d\  -f1)"
-ESP_DISK="/dev/$("${BIN[lsblk]}" -lno NAME,PKNAME | "${BIN[grep]}" "${ESP_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
-ESP_PART="${ESP_BDEV##${ESP_DISK}}"
-ESP_UUID="$("${BIN[lsblk]}" -lno NAME,PARTUUID | "${BIN[grep]}" "${ESP_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
-#ESP_PLBL="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${ESP_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+LDR_MTPT="${MOUNTPNT}"
+LDR_BDEV="$("${BIN[mount]}" | "${BIN[grep]}" "on ${LDR_MTPT} type" | "${BIN[cut]}" -d\  -f1)"
+LDR_DISK="/dev/$("${BIN[lsblk]}" -lno NAME,PKNAME | "${BIN[grep]}" "${LDR_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+LDR_PART="${LDR_BDEV##${LDR_DISK}}"
+LDR_UUID="$("${BIN[lsblk]}" -lno NAME,PARTUUID | "${BIN[grep]}" "${LDR_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+#ESP_PLBL="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${LDR_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
 
 while true; do
   SELECT_BOOTLOADER || break
