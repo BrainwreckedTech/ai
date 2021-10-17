@@ -946,7 +946,7 @@ while true; do
       ;;
     refind)
       INSTALL_REFIND && \
-      INSTALL_EFI_TOOLS refind && \
+      INSTALL_EFI_TOOLS && \
       INSTALL_HOOK_REFIND && \
       GENERATE_BOOT_STANZA refind && \
       CONFIGURE_REFIND
@@ -956,7 +956,7 @@ while true; do
       ;;
     systemd-boot)
       INSTALL_SYSTEMD_BOOT && \
-      INSTALL_EFI_TOOLS systemd-boot && \
+      INSTALL_EFI_TOOLS && \
       INSTALL_HOOK_SYSTEMDBOOT && \
       GENERATE_BOOT_STANZA systemd-boot && \
       CONFIGURE_SYSTEMD_BOOT
