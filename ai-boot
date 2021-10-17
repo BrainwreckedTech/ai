@@ -101,10 +101,10 @@ function CHOOSE_EFI_STANDARD_OR_DEFAULT {
   local -r BAKTITLE='Installation Type'
   local -r HELP_MSG='Do you want to install normally, or as a default bootloader?'
 
-  SUGGESTS+=("${LOCATION}" "${LOCATION%%/EFI*}/EFI/Boot")
-  DESCRIPS+=("Install bootloader normally (in /EFI${LOCATION##*/EFI}) and create boot entry if needed"
-             "Install bootloader as default (in /EFI/Boot) and do not create a boot entry")
-  
+  SUGGESTS=("${LOCATION}" "${LOCATION%%/EFI*}/EFI/Boot")
+  DESCRIPS=("Install bootloader normally (in /EFI${LOCATION##*/EFI}) and create boot entry if needed"
+            "Install bootloader as default (in /EFI/Boot) and do not create a boot entry")
+
   DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${LOCATION}" \
     "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
 }
