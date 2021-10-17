@@ -208,6 +208,53 @@ function GET_ACTIVE_STANZA_NAMES_REFIND {
   "${BIN[sed]}" 's/menuentry //g;s/[ \t]*{.*$//g' | "${BIN[tr]}" -d '"'
 }
 
+function GET_STANZA_LAYOUT_SYSLINUX {
+  local CFG_LINE INT_LINE MENU_LVL
+  [[ -e "${1}" ]] || return 0
+
+  while read -r CFG_LINE; do
+    if [[ ${CFG_LINE} =~ ^[[:blank:]]*MENU[[:blank:]]+BEGIN ]]; then
+      INT_LINE="${CFG_LINE// /}"
+      INT_LINE="${INT_LINE//$'\t'/}"
+      MENU_LVL+="${INT_LINE#MENUBEGIN} » "
+      echo "${MENU_LVL}[begin]"
+    fi
+    if [[ ${CFG_LINE} =~ ^[[:blank:]]*LABEL ]]; then
+      INT_LINE="${CFG_LINE// /}"
+      INT_LINE="${INT_LINE//$'\t'/}"
+      echo "${MENU_LVL}${INT_LINE#LABEL}"
+    fi
+    if [[ ${CFG_LINE} =~ ^[[:blank:]]*MENU[[:blank:]]+END ]]; then
+      echo "${MENU_LVL}[end]"
+      if [[ $(echo "${MENU_LVL// /}" | "${BIN[tr]}" -dc '»' | "${BIN[wc]}" -c) -eq 2 ]]; then
+        unset MENU_LVL
+      else
+        MENU_LVL="${MENU_LVL% » * » } » "
+      fi
+    fi
+  done < "${1}"
+}
+
+function GET_STANZA_SYSLINUX {
+  local SERCHFOR="${1}"
+  SERCHFOR="${SERCHFOR% » \[*\]}"
+  SERCHFOR="${SERCHFOR##* » }"
+  local MENU_STR="(?s)[ \t]*MENU[ \t]+BEGIN[ \t]+${SERCHFOR}.*?MENU[ \t]+END[ \t]+${SERCHFOR}"
+  local LABELSTR="(?s)[ \t]*LABEL[ \t]+${SERCHFOR}[ \t]*\n([ \t]*(MENU LABEL|LINUX|APPEND|INITRD)[^\n]+[\n])+"
+  local MBEG_STR="(?s)[ \t]*MENU[ \t]+BEGIN[ \t]+${SERCHFOR}[ \t]*\n*MENU[ \t]+LABEL[^\n]+"
+  local MEND_STR="(?s)[ \t]*MENU[ \t]+END[ \t]+${SERCHFOR}[ \t]*\n"
+
+  if [[ ${1} =~ '[begin]' ]]; then
+    "${BIN[grep]}" -Pzos "${MBEG_STR}" "${2}" | "${BIN[tr]}" -d '\0'
+  elif [[ ${1} =~ '[end]' ]]; then
+    "${BIN[grep]}" -Pzos "${MEND_STR}" "${2}" | "${BIN[tr]}" -d '\0'
+  elif [[ $("${BIN[grep]}" "\s${SERCHFOR}\s*$" "${2}") =~ BEGIN ]]; then
+    "${BIN[grep]}" -Pzos "${MENU_STR}" "${2}" | "${BIN[tr]}" -d '\0'
+  else
+    "${BIN[grep]}" -Pzos "${LABELSTR}" "${2}" | "${BIN[tr]}" -d '\0'
+  fi
+}
+
 function GET_LUKS_KCL {
   DUMPINFO="$(USE_PRIVILEGE /sbin/cryptsetup luksDump "${1}")"
   LUKSUUID="$("${BIN[grep]}" 'UUID' <<< "${DUMPINFO}" | "${BIN[sed]}" 's/.*\s\+//g')"
@@ -234,6 +281,50 @@ function GET_OPTINFO_REFIND {
     "${BIN[sed]}" ':a;N;$!ba;s/\n \{3,\}/ /g;s/what\norder/what order/g;s/all\nOSes/all OSes/g;s/the\nEFI/the EFI/g;s/\n\([a-z(]\+\)/ \1/g;s/\n\([A-Z(]\+\)/\n\n\1/g;' | \
     "${BIN[sed]}" 's/^ \+-\? \?\**/• /g' |
     "${BIN[sed]}" ':a;N;$!ba;s/\(\(\n•[^\n]\+\)\+\)/\n\1/g'
+}
+
+function GET_OPTINFO_SYSLINUX {
+  case "${1}" in
+    DEFAULT)
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			Set the default boot entry which will launch after TIMEOUT÷10 seconds.
+			ENDOFSCRIPT
+      ;;
+    PROMPT)
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			Display the boot: prompt only if the Shift or Alt key is pressed, or Caps
+			Lock or Scroll lock is set? (Otherwise always display the boot: prompt.)
+			ENDOFSCRIPT
+      ;;
+    TIMEOUT)
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			If more than one label entry is available, this directive indicates how
+			long to pause at the boot: prompt until booting automatically, in units
+			of tenths of a second. The timeout is cancelled when any key is pressed,
+			the assumption being the user will complete the command line. A timeout
+			of zero will disable the timeout completely. The default is 0.
+			
+			When only one label entry is available, the timeout is ignored. To avoid
+			automatically and immediately booting the (only and default) entry, use
+			"PROMPT 1" too, or add at least one additional label entry.
+			ENDOFSCRIPT
+      ;;
+    'MENU BACKGROUND')
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			Sets the background image for vesamenu
+			ENDOFSCRIPT
+      ;;
+    'MENU TITLE')
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			Give the menu a title. The title is presented at the top of the menu.
+			ENDOFSCRIPT
+      ;;
+    UI)
+      "${BIN[cat]}" <<- ENDOFSCRIPT
+			Use the graphical menu?  (Otherwise, use text only mode.)
+			ENDOFSCRIPT
+      ;;
+  esac
 }
 
 function GET_OPTINFO_SYSTEMD_BOOT {
@@ -364,6 +455,67 @@ function CONFIGURE_REFIND {
   done
 }
 
+function CONFIGURE_SYSLINUX {
+  local CFG_OPTN EXISTCFG CFG_FILE SUGGESTS DESCRIPS SELSTATE
+  local -ra LOOK_FOR=(TIMEOUT:range PROMPT:bool UI:bool DEFAULT:select
+                      'MENU BACKGROUND:select' 'MENU TITLE:text')
+
+  if [[ ${VALIDEFI+y} == y ]]; then
+    CFG_FILE="${LDR_MTPT}/EFI/syslinux/syslinux.cfg"
+  else
+    CFG_FILE="${IMG_PATH}/syslinux/syslinux.cfg"
+  fi
+
+  for CFG_OPTN in "${LOOK_FOR[@]}"; do
+    EXISTCFG="$("${BIN[grep]}" -s "^\s*#*${CFG_OPTN%:*}" "${CFG_FILE}" | "${BIN[sed]}" "s/^\s*#*${CFG_OPTN%:*}\s*//g"  | "${BIN[tail]}" -1)"
+    HELP_MSG="$(GET_OPTINFO_SYSLINUX "${CFG_OPTN%:*}")"
+    unset SUGGESTS DESCRIPS SELSTATE
+    case "${CFG_OPTN#*:}" in
+      bool)
+        [[ ${CFG_OPTN%:*} == PROMPT ]] && BOOLTRUE=0 && BOOLNOPE=1
+        [[ ${CFG_OPTN%:*} == UI ]] && BOOLTRUE='vesamenu' && BOOLNOPE='menu'
+        DIALOG_YESNO "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" \
+          && echo "${BOOLTRUE}" > /tmp/selection || echo "${BOOLNOPE}" > /tmp/selection
+        ;;
+      text)
+        DIALOG_INPUT "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" "${EXISTCFG}" || return 1
+        ;;
+      select)
+        case "${CFG_OPTN%:*}" in
+          DEFAULT)
+            while read -r BT_ENTRY; do
+              SUGGESTS+=("${BT_ENTRY##* » }")
+              DESCRIPS+=("${BT_ENTRY}")
+            done < <(GET_STANZA_LAYOUT_SYSLINUX "${CFG_FILE}" | "${BIN[grep]}" -v '\[')
+            ;;
+          'MENU BACKGROUND')
+            IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${CFG_FILE%\/syslinux.conf}" \( -name '*.bmp' -o -name '*.jpg' -o -name '*.png' \) | ${BIN[grep]} -v '/icons/\|/fonts/\|/selection[a-z_]\+\.png' | ${BIN[sed]} "s|${CFG_FILE%\/syslinux.conf}/||g")
+            IFS=$'\n' read -r -d '' -a DESCRIPS < <("${BIN[find]}" "${CFG_FILE%\/syslinux.conf}" \( -name '*.bmp' -o -name '*.jpg' -o -name '*.png' \) | ${BIN[grep]} -v '/icons/\|/fonts/\|/selection[a-z_]\+\.png' | ${BIN[sed]} "s|${CFG_FILE%\/syslinux.conf}/||g")
+            ;;
+        esac
+        [[ ${CFG_OPTN%:*} == 'MENU BACKGROUND' ]] && TAG_VIEW='hidetags' || TAG_VIEW='showtags'
+        [[ ${#SUGGESTS[@]} -eq 0 ]] && continue
+        DIALOG_SINGLE_SELECT "${TITLEBAR}" "${CFG_OPTN%:*}" "${TAG_VIEW}" "${EXISTCFG}" \
+          "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
+        ;;
+      range)
+        DIALOG_RANGE "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" 0 60 2 || return 1
+        ;;
+    esac
+    SELECTED="$(</tmp/selection)"
+    if "${BIN[grep]}" -qs "^\s*${CFG_OPTN%:*}" "${CFG_FILE}"; then
+      USE_PRIVILEGE "${BIN[sed]}" -i "s|^\s*#*${CFG_OPTN%:*}\s\+.*|${CFG_OPTN%:*} ${SELECTED}|g" "${CFG_FILE}"
+      # Some places in the config file have commented-out examples.
+      # This script ends up changing them all the what the user set.
+      # While this doesn't affect anything functionality-wise, it
+      # doesn't look professional so let's clean it up.
+      USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|\(${CFG_OPTN%:*} ${SELECTED}\n\)\{2,\}|${CFG_OPTN%:*} ${SELECTED}\n|g" "${CFG_FILE}"
+    else
+      USE_PRIVILEGE "${BIN[sed]}" -i "1i${CFG_OPTN%:*} ${SELECTED}" "${CFG_FILE}"
+    fi
+  done
+}
+
 function CONFIGURE_SYSTEMD_BOOT {
   local CFG_OPTN EXISTCFG CFG_FILE="${LDR_MTPT}/loader/loader.conf"
   local HELP_MSG XTRATABS
@@ -443,6 +595,8 @@ function GENERATE_BOOT_STANZA {
   case "${1}" in
     refind)
       GENERATE_BOOT_STANZA_REFIND       "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}";;
+    syslinux)
+      GENERATE_BOOT_STANZA_SYSLINUX     "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}";;
     systemd-boot)
       GENERATE_BOOT_STANZA_SYSTEMD_BOOT "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}";;
   esac
@@ -554,7 +708,170 @@ function GENERATE_BOOT_STANZA_REFIND {
       USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|${EXSTANZA}|${BTSTANZA}|g" "${CFG_FILE}"
     fi
   else
-    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b||' '${BTSTANZA}' | tr '|' '\n' >> '${CFG_FILE}'"
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '|%b||' '${BTSTANZA}' | tr '|' '\n' >> '${CFG_FILE}'"
+  fi
+}
+
+function MANAGE_SYSLINUX_TOOLS {
+  local CFG_OPTN EXISTCFG CFG_FILE SUGGESTS DESCRIPS SELSTATE TYPE
+  local -ra LOOK_FOR=(memtest86.bin hdt.c32 reboot.c32 poweroff.c32)
+  local -ra DESCRIPS=(MemTest86+ 'Hardware Detectection Tool' Reboot 'Power Off')
+
+  if [[ ${VALIDEFI+y} == y ]]; then
+    CFG_FILE="${LDR_MTPT}/EFI/syslinux/syslinux.cfg"
+  else
+    CFG_FILE="${IMG_PATH}/syslinux/syslinux.cfg"
+  fi
+
+  for (( LC=0 ; LC<${#LOOK_FOR[@]} ; LC++ )); do
+    # Set the SysLinux command that loads what we're looking for
+    [[ ${LOOK_FOR[${LC}]} =~ bin ]] && TYPE='LINUX' || TYPE='COM32'
+    # If using EFI, delete all of these entries.  For BIOS, ensure all are present
+    [[ ${VALIDEFI+y} == y ]] && MODE='delete' || MODE='insert'
+    # Except for Power Off, because it only works with APM which has been long deprecated
+    [[ ${LOOK_FOR[${LC}]} =~ power ]] && MODE='delete'
+    # If the memtest bin isn't present, then remove that as well.
+    [[ ${LOOK_FOR[${LC}]} =~ memtest ]] && \
+      [[ ! -e ${IMG_PATH}/memtest86+/memtest.bin ]] && MODE='delete'
+    # Grab the stanza we're looking for, if present
+    EXSTANZA="$("${BIN[grep]}" -Pzo "(?s)[ \t]*LABEL[ \t]+${LOOK_FOR[${LC}]%.*}.*?${LOOK_FOR[${LC}]}[ \t]*\n" "${CFG_FILE}" | "${BIN[tr]}" -d '\0' | "${BIN[sed]}" ':a;N;$!ba;'"s/\n/\\\n/g;")"
+    # If the stanza to be inserted already exists, skip
+    [[ ${MODE} == insert ]] && [[ -n ${EXSTANZA} ]] && continue
+    [[ ${MODE} == delete ]] && [[ -z ${EXSTANZA} ]] && continue
+    [[ ${MODE} == delete ]] && USE_PRIVILEGE sed -i ':a;N;$!ba;'"s|${EXSTANZA}||g" "${CFG_FILE}"
+    [[ ${MODE} == insert ]] && \
+      USE_PRIVILEGE sed -i "s|\(\s*LABEL\s\+${LOOK_FOR[$((LC+1))]%.*}\s*\)|LABEL ${LOOK_FOR[${LC}]%.*}\nMENU LABEL ${DESCRIPS[${LC}]}\n${TYPE} ${IMG_BPTH}/${LOOK_FOR[${LC}]/memtest.bin/metest86+\/memtest.bin}\n\n\1|g" "${CFG_FILE}"
+  done
+  return 0
+}
+
+function GENERATE_BOOT_STANZA_SYSLINUX {
+  [[ -n "${1}" ]] && local ADDLKCLP="${1}" || unset ADDLKCLP
+  [[ -n "${2}" ]] && local PLYMKCLP="${2}" || unset PLYMKCLP
+  [[ -n "${3}" ]] && local LUKSKCLP="${3}" || unset LUKSKCLP
+  local CFG_FILE USETHEME BAKTITLE HELP_MSG DFLTSLCT SELECTED BTSTANZA EXSTANZA STNZATTL
+  local -a ASTANZAS SUGGESTS DESCRIPS
+  local -i LC
+
+  if [[ ${VALIDEFI+y} == y ]]; then
+    CFG_FILE="${LDR_MTPT}/EFI/syslinux/syslinux.cfg"
+  else
+    CFG_FILE="${LDR_MTPT}${LDR_BPTH}/syslinux/syslinux.cfg"
+  fi
+
+  for (( LC=0 ; LC<${#KRN_IMGS[@]} ; LC++ )); do
+    if [[ -n ${MCODEIRD}${MIR_IMGS[${LC}]} ]]; then
+      [[ -n ${MCODEIRD} ]] && MAININIT="${MCODEIRD}"
+      [[ -n ${MIR_IMGS[${LC}]} ]] && MAININIT="${MCODEIRD}${MCODEIRD+,}${MIR_IMGS[${LC}]}"
+    fi
+    if [[ -n ${MCODEIRD}${RIR_IMGS[${LC}]} ]]; then
+      [[ -n ${MCODEIRD} ]] && RESCINIT="${MCODEIRD}"
+      [[ -n ${MIR_IMGS[${LC}]} ]] && RESCINIT="${MCODEIRD}${MCODEIRD+,}${RIR_IMGS[${LC}]}"
+    fi
+
+    BTSTANZA="MENU BEGIN ${OSR_OSID}\n"
+    BTSTANZA+="MENU LABEL ${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNTYPES[${LC}]+ }${KRNTYPES[${LC}]^}\n\n"
+
+    BTSTANZA+="\tLABEL\t${OSR_OSID}-normal\n"
+    BTSTANZA+="\tMENU LABEL Normal startup\n"
+    BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
+    BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}\n"
+    [[ -n ${MAININIT} ]] && BTSTANZA+="\tINITRD\t${MAININIT}\n\n"
+
+    if [[ ${ADDLKCLP} =~ quiet ]]; then
+      BTSTANZA+="\tLABEL\t${OSR_OSID}-verbose\n"
+      STNZATTL="Verbose startup"
+      [[ -z ${PLMTHKCL} ]] && STNZATTL="${STNZATTL#V/No splash & v}"
+      BTSTANZA+="\tMENU LABEL ${STNZATTL}\n"
+      BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
+      BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}\n"
+      [[ -n ${MAININIT} ]] && BTSTANZA+="\tINITRD\t${MAININIT}\n\n"
+    fi
+
+    if [[ -e ${OSCHROOT}/etc/systemd/system/display-manager.service ]]; then
+      BTSTANZA+="\tLABEL\t${OSR_OSID}-cli\n"
+      BTSTANZA+="\tMENU LABEL Boot to console\n"
+      BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
+      BTSTANZA+="\t\APPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target\n"
+      [[ -n ${MAININIT} ]] && BTSTANZA+="\tINITRD\t${MAININIT}\n\n"
+    fi
+
+    if [[ ${MIR_IMGS[${LC}]} != "${RIR_IMGS[${LC}]}" ]] && [[ -n ${RIR_IMGS[${LC}]} ]]; then
+      BTSTANZA+="\tLABEL\t${OSR_OSID}-fallback\n"
+      BTSTANZA+="\tMENU LABEL Startup with fallback initramfs\n"
+      BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
+      BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}\n"
+      [[ -n ${RESCINIT} ]] && BTSTANZA+="\tINITRD\t${RESCINIT}\n\n"
+    fi
+
+    BTSTANZA+="\tLABEL\t${OSR_OSID}-rescue\n"
+    BTSTANZA+="\tMENU LABEL Boot to systemd rescue.target\n"
+    BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
+    BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target\n"
+    [[ -n ${RESCINIT} ]] && BTSTANZA+="\tINITRD\t${RESCINIT}\n\n"
+
+    BTSTANZA+="MENU END ${OSR_OSID}"
+  done
+
+  IFS=$'\n' read -r -d '' -a ASTANZAS < <(GET_STANZA_LAYOUT_SYSLINUX "${CFG_FILE}" | ${BIN[grep]} -v end | "${BIN[sed]}" 's/begin/entire menu/g')
+  DESCRIPS+=("${ASTANZAS[@]}" '[create new entry]')
+  for (( LC=0 ; LC<${#DESCRIPS[@]} ; LC++ )); do
+    SUGGESTS+=("${LC}")
+  done
+
+  if [[ ${#SUGGESTS[@]} -gt 1 ]]; then
+    ##############################################################################
+    BAKTITLE="SysLinux Boot Entry Placement"
+    HELP_MSG="Select the entry to replace:"
+    ##############################################################################
+    DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' "${DFLTSLCT}" \
+      "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
+    SELECTED="$(</tmp/selection)"
+    if [[ ${SELECTED} -eq ${SUGGESTS[-1]} ]]; then
+      unset SUGGESTS DESCRIPS
+      IFS=$'\n' read -r -d '' -a ASTANZAS < <(GET_STANZA_LAYOUT_SYSLINUX "${CFG_FILE}")
+      for (( LC=0 ; LC<${#ASTANZAS[@]} ; LC++ )); do
+        if [[ ${LC} -eq 0 ]]; then
+          DESCRIPS[${LC}]="Place first, before ${ASTANZAS[${LC}]}"
+        else
+          DESCRIPS[${LC}]="Place between ${ASTANZAS[$((LC-1))]} and ${ASTANZAS[${LC}]}"
+        fi
+        SUGGESTS+=("${LC}")
+      done
+      DESCRIPS[${LC}]="Place last, after ${ASTANZAS[$((LC-1))]}"
+      SUGGESTS+=("${LC}")
+
+      ############################################################################
+      BAKTITLE="rEFInd Boot Entry Placement"
+      HELP_MSG="Select where to insert the new entry:"
+      ############################################################################
+      DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
+        "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
+      SELECTED="$(</tmp/selection)"
+
+      if [[ ${SELECTED} -lt ${SUGGESTS[-1]} ]]; then
+        EXSTANZA="$(GET_STANZA_SYSLINUX "${ASTANZAS[${SELECTED}]}" "${CFG_FILE}")"
+        EXSTANZA="${EXSTANZA//\\/\\\\}"
+        EXSTANZA="${EXSTANZA//$'\n'/\\n}"
+        EXSTANZA="${EXSTANZA//$'\t'/\\t}"
+        USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|${EXSTANZA}|${BTSTANZA}\n\n${EXSTANZA}|g" "${CFG_FILE}"
+      else
+        EXSTANZA="$(GET_STANZA_SYSLINUX "${ASTANZAS[$((SELECTED-1))]}" "${CFG_FILE}")"
+        EXSTANZA="${EXSTANZA//\\/\\\\}"
+        EXSTANZA="${EXSTANZA//$'\n'/\\n}"
+        EXSTANZA="${EXSTANZA//$'\t'/\\t}"
+        USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|${EXSTANZA}|${EXSTANZA}\n\n${BTSTANZA}|g" "${CFG_FILE}"
+      fi
+
+    else
+      EXSTANZA="$(GET_STANZA_SYSLINUX "${DESCRIPS[${SELECTED}]}" "${CFG_FILE}")"
+      EXSTANZA="${EXSTANZA//\\/\\\\}"
+      EXSTANZA="${EXSTANZA//$'\n'/\\n}"
+      EXSTANZA="${EXSTANZA//$'\t'/\\t}"
+      USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|${EXSTANZA}|${BTSTANZA}|g" "${CFG_FILE}"
+    fi
+  else
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '|%b||' '${BTSTANZA}' | tr '|' '\n' >> '${CFG_FILE}'"
   fi
 }
 
@@ -637,6 +954,10 @@ function INSTALL_EFI_BOOT_ENTRY {
     refind)
       EFI_PATH="/EFI/refind/refind_${SUFFIX}.efi"
       BT_LABEL='rEFInd Boot Manager'
+      ;;
+    syslinux)
+      EFI_PATH="/EFI/syslinux/syslinux.efi"
+      BT_LABEL='SysLinux'
       ;;
     systemd-boot)
       EFI_PATH="/EFI/systemd/systemd-boot${SUFFIX}.efi"
@@ -734,6 +1055,39 @@ function INSTALL_REFIND {
   [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY refind
 }
 
+function INSTALL_SYSLINUX {
+  local LDR_ARCH LDR_PATH LDR_ULIB LOCATION
+  if [[ ${VALIDEFI+y} == y ]]; then
+    LDR_PATH="${LDR_MTPT}/EFI/syslinux"
+    CHOOSE_EFI_STANDARD_OR_DEFAULT "${LDR_PATH}"
+    LOCATION="$(</tmp/selection)"
+  else
+    LDR_PATH="${LDR_MTPT}${LDR_BPTH}/syslinux"
+    LOCATION="${LDR_MTPT}${LDR_BPTH}/syslinux"
+  fi
+  LDR_ULIB="${OSCHROOT}/usr/lib/syslinux"
+
+  USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_PATH}"
+
+  # Syslinux has a bit of a problem in that you can't copy both x64 and
+  # ia32 files over.  It expects c32 files to be in /EFI/syslinux and
+  # there's no difference in name between the two architectures.
+
+  if [[ -e ${LDR_ULIB}/efi${SYSTEM[fw-bits]} ]]; then
+    [[ ${SYSTEM[fw-bits]} -eq 64 ]] && LDR_ARCH='x64' || LDR_ARCH='ia32'
+    USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_ULIB}/efi${SYSTEM[fw-bits]}/"*.c32 "${LDR_PATH}/"
+    [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${LDR_ARCH}.efi" || unset OUTPUTFN
+    USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_ULIB}/efi${SYSTEM[fw-bits]}/syslinux.efi" "${LOCATION}/${OUTPUTFN}"
+  fi
+
+  if [[ ${LOCATION} =~ /EFI ]]; then
+    USE_PRIVILEGE "${BIN[cp]}" -np "${IMG_PATH}/syslinux/syslinux.cfg" "${LDR_PATH}/syslinux.cfg"
+    [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY syslinux
+  else
+   USE_PRIVILEGE "${BIN[dd]}" bs=440 count=1 conv=notrunc if="${LDR_ULIB}/bios/mbr.bin" of="${LDR_DISK}"
+  fi
+}
+
 function INSTALL_SYSTEMD_BOOT {
   local LDR_PATH="${LDR_MTPT}/EFI/systemd"
   local LDR_ULIB="${OSCHROOT}/usr/lib/systemd/boot/efi"
@@ -772,8 +1126,10 @@ function SELECT_BOOTLOADER {
     SUGGESTS+=(refind)
     DESCRIPS+=('An EFI boot manager forked from rEFIt')
   fi; if [[ -e ${OSCHROOT}/usr/bin/syslinux ]]; then
-    SUGGESTS+=(syslinux)
-    DESCRIPS+=('Suite of lightweight boot loaders')
+    if [[ ${IMG_UUID} == ${LDR_UUID} ]]; then
+      SUGGESTS+=(syslinux)
+      DESCRIPS+=('Suite of lightweight boot loaders')
+    fi
   fi; if [[ -e ${OSCHROOT}/usr/bin/bootctl ]]; then
     SUGGESTS+=(systemd-boot)
     DESCRIPS+=('An EFI boot loader included with systemd')
@@ -952,7 +1308,10 @@ while true; do
       CONFIGURE_REFIND
       ;;
     syslinux)
-      DIALOG_MSGBOX "${TITLEBAR}" 'SysLinux' 'Not implemented yet'
+      INSTALL_SYSLINUX && \
+      MANAGE_SYSLINUX_TOOLS && \
+      GENERATE_BOOT_STANZA syslinux && \
+      CONFIGURE_SYSLINUX
       ;;
     systemd-boot)
       INSTALL_SYSTEMD_BOOT && \

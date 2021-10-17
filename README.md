@@ -58,12 +58,12 @@ Configures the bootloader of the new system
 
 STATUS: Work in progress.
 
-| Firmware | Bootloader   | Installation | Tools | Hook | Configure | Stanza |
-|:--------:|:------------:|:------------:|:-----:|:----:|:---------:|:------:|
+| Firmware | Bootloader   | Installation | Tools | Hook | Stanza | Configure |
+|:--------:|:------------:|:------------:|:-----:|:----:|:------:|:---------:|
+| BIOS     | GRUB 2       |❌|❌|❌|❌|❌|
 | UEFI     | GRUB 2       |❌|❌|❌|❌|❌|
 | UEFI     | rEFInd       |✔|✔|✔|✔|✔|
-| UEFI     | SysLinux     |❌|❌|❌|❌|❌|
+| BIOS     | SysLinux     |✔|✔|?|✔|✔|
+| UEFI     | SysLinux     |✔|ⁿ∕ₐ|?|✔|✔|
 | UEFI     | systemd-boot |✔|✔|✔|✔|✔|
-| BIOS     | GRUB 2       |❌|❌|❌|❌|❌|
-| BIOS     | SysLinux     |❌|❌|❌|❌|❌|
 
