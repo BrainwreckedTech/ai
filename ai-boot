@@ -353,7 +353,7 @@ function GET_VOLUME_ID {
 }
 
 function CONFIGURE_REFIND {
-  local BTLDRCFG="${LDR_MTPT}/EFI/refind/refind.conf"
+  local CFG_FILE="${LDR_MTPT}/EFI/refind/refind.conf"
   local CFG_OPTN EXISTCFG HELP_MSG BOOLTRUE BOOLNOPE
   local -a SUGGESTS DESCRIPS SELSTATE
   local -ra LOOK_FOR=(timeout:range use_nvram:bool banner:select textonly:bool
@@ -365,7 +365,7 @@ function CONFIGURE_REFIND {
     [[ ${CFG_OPTN%:*} == showtools ]] && GUI_WIDE=768
     [[ ${CFG_OPTN%:*} == default_selection ]] && GUI_WIDE=768
     [[ ${CFG_OPTN%:*} == scanfor ]] && GUI_WIDE="${WIDEHACK}"
-    EXISTCFG="$("${BIN[grep]}" "^\s*#*${CFG_OPTN%:*}" "${BTLDRCFG}" | ${BIN[cut]} -d\  -f2- | "${BIN[tail]}" -1)"
+    EXISTCFG="$("${BIN[grep]}" "^\s*#*${CFG_OPTN%:*}" "${CFG_FILE}" | ${BIN[cut]} -d\  -f2- | "${BIN[tail]}" -1)"
     HELP_MSG="$(GET_OPTINFO_REFIND "${CFG_OPTN%:*}")"
     unset SUGGESTS DESCRIPS SELSTATE
     case "${CFG_OPTN#*:}" in
@@ -385,7 +385,7 @@ function CONFIGURE_REFIND {
             DESCRIPS+=('The ELILO boot loader' 'The GRUB (Legacy or 2) boot loader'
                        'A Linux kernel with EFI stub loader' macOS 'Microsoft Windows')
             for OPTION in "${SUGGESTS[@]}"; do
-              "${BIN[grep]}" -qs "^use_graphics_for.*${OPTION}" "${BTLDRCFG}" \
+              "${BIN[grep]}" -qs "^use_graphics_for.*${OPTION}" "${CFG_FILE}" \
                 && SELSTATE+=(on) || SELSTATE+=(off)
             done
             ;;
@@ -396,8 +396,8 @@ function CONFIGURE_REFIND {
       select)
         case "${CFG_OPTN%:*}" in
           banner)
-            IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${BTLDRCFG%\/refind.conf}" \( -name '*.bmp' -o -name '*.jpg' -o -name '*.png' \) | ${BIN[grep]} -v '/icons/\|/fonts/\|/selection[a-z_]\+\.png' | ${BIN[sed]} "s|${BTLDRCFG%\/refind.conf}/||g")
-            IFS=$'\n' read -r -d '' -a DESCRIPS < <("${BIN[find]}" "${BTLDRCFG%\/refind.conf}" \( -name '*.bmp' -o -name '*.jpg' -o -name '*.png' \) | ${BIN[grep]} -v '/icons/\|/fonts/\|/selection[a-z_]\+\.png' | ${BIN[sed]} "s|${BTLDRCFG%\/refind.conf}/||g")
+            IFS=$'\n' read -r -d '' -a SUGGESTS < <("${BIN[find]}" "${CFG_FILE%\/refind.conf}" \( -name '*.bmp' -o -name '*.jpg' -o -name '*.png' \) | ${BIN[grep]} -v '/icons/\|/fonts/\|/selection[a-z_]\+\.png' | ${BIN[sed]} "s|${CFG_FILE%\/refind.conf}/||g")
+            IFS=$'\n' read -r -d '' -a DESCRIPS < <("${BIN[find]}" "${CFG_FILE%\/refind.conf}" \( -name '*.bmp' -o -name '*.jpg' -o -name '*.png' \) | ${BIN[grep]} -v '/icons/\|/fonts/\|/selection[a-z_]\+\.png' | ${BIN[sed]} "s|${CFG_FILE%\/refind.conf}/||g")
             ;;
           textmode)
             SUGGESTS=(0 1 2 1024)
@@ -424,23 +424,23 @@ function CONFIGURE_REFIND {
         ;;
     esac
     SELECTED="$(</tmp/selection)"
-    USE_PRIVILEGE "${BIN[sed]}" -i "s|^\s*#*${CFG_OPTN%:*}\s\+.*|${CFG_OPTN%:*} ${SELECTED}|g" "${BTLDRCFG}"
+    USE_PRIVILEGE "${BIN[sed]}" -i "s|^\s*#*${CFG_OPTN%:*}\s\+.*|${CFG_OPTN%:*} ${SELECTED}|g" "${CFG_FILE}"
     # Some places in the config file have commented-out examples.
     # This script ends up changing them all the what the user set.
     # While this doesn't affect anything functionality-wise, it
     # doesn't look professional so let's clean it up.
-    USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|\(${CFG_OPTN%:*} ${SELECTED}\n\)\{2,\}|${CFG_OPTN%:*} ${SELECTED}\n|g" "${BTLDRCFG}"
+    USE_PRIVILEGE "${BIN[sed]}" -i ':a;N;$!ba;'"s|\(${CFG_OPTN%:*} ${SELECTED}\n\)\{2,\}|${CFG_OPTN%:*} ${SELECTED}\n|g" "${CFG_FILE}"
   done
 }
 
 function CONFIGURE_SYSTEMD_BOOT {
-  local CFG_OPTN EXISTCFG BTLDRCFG="${LDR_MTPT}/loader/loader.conf"
+  local CFG_OPTN EXISTCFG CFG_FILE="${LDR_MTPT}/loader/loader.conf"
   local HELP_MSG XTRATABS
   local -ra LOOK_FOR=(default:select timeout:range console-mode:select editor:bool
                       auto-entries:bool auto-firmware:bool random-seed-mode:select)
 
   for CFG_OPTN in "${LOOK_FOR[@]}"; do
-    EXISTCFG="$("${BIN[grep]}" "^${CFG_OPTN%:*}" "${BTLDRCFG}" | ${BIN[sed]} 's/.*\s//g')"
+    EXISTCFG="$("${BIN[grep]}" "^${CFG_OPTN%:*}" "${CFG_FILE}" | ${BIN[sed]} 's/.*\s//g')"
     HELP_MSG="$(GET_OPTINFO_SYSTEMD_BOOT "${CFG_OPTN%:*}")"
     case "${CFG_OPTN#*:}" in
       bool)
@@ -480,11 +480,11 @@ function CONFIGURE_SYSTEMD_BOOT {
         ;;
     esac
     SELECTED="$(</tmp/selection)"
-    USE_PRIVILEGE "${BIN[sed]}" -i "/${CFG_OPTN%:*}/d" "${BTLDRCFG}"
+    USE_PRIVILEGE "${BIN[sed]}" -i "/${CFG_OPTN%:*}/d" "${CFG_FILE}"
     unset XTRATABS
     [[ $(echo "${CFG_OPTN%:*}" | "${BIN[wc]}" -m) -lt 17 ]] && XTRATABS="\t"
     [[ $(echo "${CFG_OPTN%:*}" | "${BIN[wc]}" -m) -lt 9 ]] && XTRATABS="\t\t"
-    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\t%s\n' '${CFG_OPTN%:*}${XTRATABS}' '${SELECTED}' >> '${BTLDRCFG}'"
+    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\t%s\n' '${CFG_OPTN%:*}${XTRATABS}' '${SELECTED}' >> '${CFG_FILE}'"
   done
 }
 
