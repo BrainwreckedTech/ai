@@ -11,6 +11,7 @@ declare LDR_MTPT LDR_BDEV LDR_BPTH LDR_DISK LDR_PNUM LDR_PTYP LDR_UUID IMG_VLID
 declare IMG_MTPT IMG_BDEV IMG_BPTH IMG_DISK IMG_PNUM IMG_PTYP IMG_UUID IMG_SBVL
 declare FULLPATH MIRD_IMG RIRD_IMG
 declare -a KRNTYPES KRN_IMGS MIR_IMGS RIR_IMGS
+declare CPUMCODE MCODEIRD FULLPATH MIRD_IMG RIRD_IMG
 
 ################################################################################
 # Overly-cautious verification of required binaries
@@ -596,7 +597,6 @@ function GENERATE_BOOT_STANZA {
   local RFS_BDEV RFS_SPEC RFS_FLGS
   local LUKS_DVC LUKSKCLP PLYMKCLP ADDLKCLP
   local OSR_NAME OSR_VRSN OSR_OSID
-  local CPUMCODE MCODEIRD
 
   RFS_BDEV="$(GET_ROOT_BLOCK_DEVICE)"
   if [[ ${RFS_BDEV} =~ ^zfs ]]; then
@@ -629,19 +629,14 @@ function GENERATE_BOOT_STANZA {
   [[ -z ${OS_VRSN} ]] && OSR_VRSN="$("${BIN[grep]}" '^VERSION_ID=' "${OSCHROOT}/usr/lib/os-release" | "${BIN[cut]}" -d= -f2 | "${BIN[tr]}" -d '"' )"
   [[ ${OSR_OSID} =~ '-' ]] && OSR_OSID="${OSR_OSID%-*}"
 
-  for CPUMCODE in amd-ucode.img intel-ucode.img; do
-    [[ -e ${IMG_MTPT}/${CPUMCODE} ]] && MCODEIRD+="${IMG_SBVL}${IMG_PATH}/${CPUMCODE} "
-  done
-  MCODEIRD=${MCODEIRD% }
-
   case "${1}" in
     refind)
-      GENERATE_BOOT_STANZA_REFIND "${OSR_NAME}" "${OSR_VRSN}" "${OSR_OSID}" \
-        "${RFS_SPEC}" "${RFS_FLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
+      GENERATE_BOOT_STANZA_REFIND "${RFS_SPEC}" "${RFS_FLGS}" \
+        "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
       ;;
     systemd-boot)
-      GENERATE_BOOT_STANZA_SYSTEMD_BOOT "${OSR_NAME}" "${OSR_VRSN}" "${OSR_OSID}" \
-        "${RFS_SPEC}" "${RFS_FLGS}" "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
+      GENERATE_BOOT_STANZA_SYSTEMD_BOOT "${RFS_SPEC}" "${RFS_FLGS}" \
+        "${ADDLKCLP}" "${PLYMKCLP}" "${LUKSKCLP}" "${MCODEIRD}"
       ;;
   esac
 }
@@ -655,7 +650,6 @@ function GENERATE_BOOT_STANZA_REFIND {
   [[ -n "${6}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
   [[ -n "${7}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
   [[ -n "${8}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
-  [[ -n "${9}" ]] && local MCODEIRD="initrd=${14}" && MCODEIRD="${MCODEIRD/ / initrd=}" || unset MCODEIRD
   local CFG_FILE USETHEME BAKTITLE HELP_MSG DFLTSLCT SELECTED BTSTANZA EXSTANZA STNZATTL
   local -a ASTANZAS SUGGESTS DESCRIPS
   local -i LC
@@ -771,7 +765,6 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
   [[ -n "${6}" ]] && local ADDLKCLP="${11}" || unset ADDLKCLP
   [[ -n "${7}" ]] && local PLYMKCLP="${12}" || unset PLYMKCLP
   [[ -n "${8}" ]] && local LUKSKCLP="${13}" || unset LUKSKCLP
-  [[ -n "${9}" ]] && local MCODEIRD="initrd\t${14}" && MCODEIRD="${MCODEIRD/ /\\ninitrd\\n}" || unset MCODEIRD
   local CFG_FILE BAKTITLE HELP_MSG SELECTED BTSTANZA EXSTANZA STNZATTL
   local -a ASTANZAS SUGGESTS DESCRIPS DISP_MGR SAME_IRD
   local -i LC
@@ -966,6 +959,15 @@ for FULLPATH in "${IMG_PATH}"/vmlinuz-linux*; do
   MIR_IMGS+=("${MIRD_IMG}")
   RIR_IMGS+=("${RIRD_IMG}")
 done
+
+################################################################################
+# CPU MICROCODE DISCOVERY
+################################################################################
+
+for CPUMCODE in amd-ucode.img intel-ucode.img; do
+  [[ -e ${IMG_PATH}/${CPUMCODE} ]] && MCODEIRD+="${IMG_BPTH}/${CPUMCODE} "
+done
+[[ -n ${MCODEIRD} ]] && MCODEIRD="${MCODEIRD% }"
 
 while true; do
   SELECT_BOOTLOADER || break
