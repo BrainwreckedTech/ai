@@ -131,8 +131,8 @@ function CHOOSE_KCL_OPTIONS {
   ##############################################################################
   local -a SUGGESTS DESCRIPS SELSTATE UHKCLOPS
 
-  SUGGESTS+=('acpi_backlight=vendor' 'consoleblank=0' 'ipv6.disable=1' 'net.ifnames=0' 'nvidia-drm.modeset=1' quiet)
-  DESCRIPS+=('Prefer vendor-specific acpi_backlight driver'
+  SUGGESTS=('acpi_backlight=vendor' 'consoleblank=0' 'ipv6.disable=1' 'net.ifnames=0' 'nvidia-drm.modeset=1' quiet)
+  DESCRIPS=('Prefer vendor-specific acpi_backlight driver'
              "Don'\\''t blank the physical console"
              'Disable IPv6'
              'Disable persistent network interface names (go back to eth[n], etc.)'
