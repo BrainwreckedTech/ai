@@ -258,7 +258,7 @@ function GET_LUKS_KCL {
   echo "${CRYPTOCL} ${CRYPTDVC}"
 }
 
-function GET_REFIND_OPTINFO {
+function GET_OPTINFO_REFIND {
   local CFG_OPTN="${1}"
 
   # This is a hack to distinguish 'banner' from 'banner_scale'
@@ -274,7 +274,7 @@ function GET_REFIND_OPTINFO {
     "${BIN[sed]}" ':a;N;$!ba;s/\(\(\n•[^\n]\+\)\+\)/\n\1/g'
 }
 
-function GET_SYSTEMD_BOOT_OPTINFO {
+function GET_OPTINFO_SYSTEMD_BOOT {
   case "${1}" in
     default)
       "${BIN[cat]}" <<- ENDOFSCRIPT
@@ -366,7 +366,7 @@ function CONFIGURE_REFIND {
     [[ ${CFG_OPTN%:*} == default_selection ]] && GUI_WIDE=768
     [[ ${CFG_OPTN%:*} == scanfor ]] && GUI_WIDE="${WIDEHACK}"
     EXISTCFG="$("${BIN[grep]}" "^\s*#*${CFG_OPTN%:*}" "${BTLDRCFG}" | ${BIN[cut]} -d\  -f2- | "${BIN[tail]}" -1)"
-    HELP_MSG="$(GET_REFIND_OPTINFO "${CFG_OPTN%:*}")"
+    HELP_MSG="$(GET_OPTINFO_REFIND "${CFG_OPTN%:*}")"
     unset SUGGESTS DESCRIPS SELSTATE
     case "${CFG_OPTN#*:}" in
       bool)
@@ -441,7 +441,7 @@ function CONFIGURE_SYSTEMD_BOOT {
 
   for CFG_OPTN in "${LOOK_FOR[@]}"; do
     EXISTCFG="$("${BIN[grep]}" "^${CFG_OPTN%:*}" "${BTLDRCFG}" | ${BIN[sed]} 's/.*\s//g')"
-    HELP_MSG="$(GET_SYSTEMD_BOOT_OPTINFO "${CFG_OPTN%:*}")"
+    HELP_MSG="$(GET_OPTINFO_SYSTEMD_BOOT "${CFG_OPTN%:*}")"
     case "${CFG_OPTN#*:}" in
       bool)
         DIALOG_YESNO "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" \
