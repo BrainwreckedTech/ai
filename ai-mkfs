@@ -139,7 +139,7 @@ function GENERATE_MKFS_COMMANDS {
 
     MNT_OPTS="noatime"
     LABEL="${FS_LABEL["${THISPART}"]}"
-    [[ -n ${LABEL} ]] && unset LABEL
+    [[ -z ${LABEL} ]] && unset LABEL
 
     case "${FS_TYPE["${THISPART}"]}" in
        ext4) SCRIPT+="${MKFS[ext4]} -t ext4 ${LABEL+-L }${LABEL} /dev/${THISPART}"$'\n';;
