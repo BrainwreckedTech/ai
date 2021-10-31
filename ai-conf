@@ -657,6 +657,8 @@ function CONFIGURE_FSTAB {
       USE_PRIVILEGE "$(FIND_EDITOR)" "${CFG_FILE}"
     fi
   fi
+
+  return 0
 }
 
 function CONFIGURE_HOSTNAME {
