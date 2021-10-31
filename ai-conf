@@ -2424,6 +2424,9 @@ function REVIEW_MODE {
   fi
 
   if [[ -e "${OSCHROOT}/etc/nanorc" ]]; then
+    # Seeing if root has colors set requires root privilege
+    GET_PRIVILEGE
+
     MENU_TAG+=(nanoopts)
     MENU_STR+=("NanoRC Options: $(GET_NANORC_OPTIONS enabled)")
 
