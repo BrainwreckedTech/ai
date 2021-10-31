@@ -1202,7 +1202,7 @@ function SELECT_BOOTLOADER {
     SUGGESTS+=(refind)
     DESCRIPS+=('An EFI boot manager forked from rEFIt')
   fi; if [[ -e ${OSCHROOT}/usr/bin/syslinux ]]; then
-    if [[ ${IMG_UUID} == ${LDR_UUID} ]]; then
+    if [[ ${IMG_UUID} == "${LDR_UUID}" ]]; then
       SUGGESTS+=(syslinux)
       DESCRIPS+=('Suite of lightweight boot loaders')
     fi
