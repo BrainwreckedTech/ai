@@ -910,34 +910,50 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
         oops|rescue)
           [[ -n ${RIR_IMGS[${LC}]} ]] && BTSTANZA+="initrd\t${RIR_IMGS[${LC}]}\n";;
       esac
+      shopt -s extglob
       case "${CFG_TYPE}" in
         common)
           BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}\n";;
         gabby|oops)
-          BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP}\n";;
+          BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP}\n";;
         nogui)
-          BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target\n";;
+          BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target\n";;
         rescue)
-          BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / }${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target\n";;
+          BTSTANZA+="options\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target\n";;
       esac
+      shopt -u extglob
       USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/${OSR_OSID}-${KRNTYPES[${LC}],,}-${CFG_TYPE}.conf'"
     done
   done
 
-  if [[ -e ${LDR_MTPT}/EFI/tools/fwupdx64.efi ]]; then
-    BTSTANZA="title\tFirmware Update\n"
-    BTSTANZA+="efi\t/EFI/tools/fwupdx64.efi\n"
-    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-fwupdate.conf'"
-  fi
+  if [[ ${SYSTEM[fw-bits]} -eq 32 ]]; then
 
-  if [[ -e ${LDR_MTPT}/EFI/memtest86/memtest86.efi ]]; then
-    BTSTANZA="title\tMemTest86\n"
-    BTSTANZA+="efi\t/EFI/memtest86/memtest86.efi"
-    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-memtest86.conf'"
-  elif [[ -e ${LDR_MTPT}/EFI/tools/memtest86.efi ]]; then
-    BTSTANZA="title\tMemTest86\n"
-    BTSTANZA+="efi\t/EFI/tools/memtest86.efi"
-    USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-memtest86.conf'"
+    if [[ -e ${LDR_MTPT}/EFI/tools/fwupdia32.efi ]]; then
+      BTSTANZA="title\tFirmware Update\n"
+      BTSTANZA+="efi\t/EFI/tools/fwupdia32.efi\n"
+      USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-fwupdate_ia32.conf'"
+    fi
+
+    if [[ -e ${LDR_MTPT}/EFI/memtest86/bootx64.efi ]]; then
+      BTSTANZA="title\tMemTest86 64-bit\n"
+      BTSTANZA+="efi\t/EFI/memtest86/bootia32.efi"
+      USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-memtest86_ia32.conf'"
+    fi
+
+  elif [[ ${SYSTEM[fw-bits]} -eq 64 ]]; then
+
+    if [[ -e ${LDR_MTPT}/EFI/tools/fwupdx64.efi ]]; then
+      BTSTANZA="title\tFirmware Update\n"
+      BTSTANZA+="efi\t/EFI/tools/fwupdx64.efi\n"
+      USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-fwupdate_x64.conf'"
+    fi
+
+    if [[ -e ${LDR_MTPT}/EFI/memtest86/bootx64.efi ]]; then
+      BTSTANZA="title\tMemTest86 64-bit\n"
+      BTSTANZA+="efi\t/EFI/memtest86/bootx64.efi"
+      USE_PRIVILEGE sh -c "'${BIN[printf]}' '%b\n' '${BTSTANZA}' > '${CNFG_DIR}/zzzz-memtest86_x64.conf'"
+    fi
+
   fi
 }
 
