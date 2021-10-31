@@ -2158,10 +2158,10 @@ function GENERATE_INITRAMFS {
   ##############################################################################
   if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
     if [[ -n ${OSCHROOT} ]]; then
-      USE_PRIVILEGE "${BIN[arch-chroot]}" "${OSCHROOT}" 'mkinitcpio -P'
+      USE_PRIVILEGE "${BIN[arch-chroot]}" "${OSCHROOT}" mkinitcpio -P
     else
       # Allow a naked call here since we've verified mkinitcpio.conf exists
-      USE_PRIVILEGE "${BIN[arch-chroot]}" mkinitcpio -P
+      USE_PRIVILEGE mkinitcpio -P
     fi
   fi
 }
