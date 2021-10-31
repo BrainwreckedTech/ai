@@ -940,7 +940,7 @@ function CONFIGURE_MKINITCPIO_HOOKS {
   local -r HELP_MSG='NOTE: Do NOT wantonly disable base or udev unless you know what you are doing!!!'
   ##############################################################################
   local -a VALHOOKS SUGGESTS DESCRIPS SELSTATE
-  local THISHOOK HELPTEXT SELECTED PREV_CFG="$(GET_INITRAMS_HOOKS)"
+  local THISHOOK HELPTEXT SELECTED PREV_CFG="$(GET_MKINITCPIO_HOOKS)"
 
   # These are the hooks we are willing to deal with.  As the systemd stuff isn't
   # well documented, we won't deal with it and will stick with the busybox stuff.
