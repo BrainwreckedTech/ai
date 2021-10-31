@@ -6,7 +6,6 @@ source "${0%/*}/ai-funcs"
 # Here are more global variables to share amongst functions
 ################################################################################
 declare -r TITLEBAR="AI CONFIGURATION"
-declare OSCHROOT
 
 declare -ra PORTLIST=(
        21_ftp
@@ -2186,18 +2185,6 @@ function SELECT_USER {
   return "${RETVALUE}"
 }
 
-function SET_CHROOT_DIRECTORY {
-  ##############################################################################
-  local -r BAKTITLE="OS Mount Location"
-  local -r HELP_MSG="Where is the OS root filessystem mounted?"
-  ##############################################################################
-  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt/ || return 1
-  OSCHROOT="$(</tmp/selection)"
-  [[ -z ${OSCHROOT} ]] && unset OSCHROOT
-  [[ ${OSCHROOT} == '/'  ]] && unset OSCHROOT
-  OSCHROOT="${OSCHROOT%\/}"
-}
-
 function SET_USER_GROUPS {
   ##############################################################################
   local -r BAKTITLE="Group Membership"
@@ -2522,7 +2509,7 @@ function REVIEW_MODE {
   SELECTED="$(</tmp/selection)"
 
   case "${SELECTED}" in
-       chroot) SET_CHROOT_DIRECTORY;;
+       chroot) SET_CHROOT_DIRECTORY || VERIFY_EXIT '(Selecting No will set the chroot to /)';;
         fstab) CONFIGURE_FSTAB;;
      timezone) CONFIGURE_TIMEZONE;;
       locales) CONFIGURE_LOCALE_AVAILABILITY;;

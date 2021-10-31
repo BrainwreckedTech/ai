@@ -6,7 +6,6 @@ declare -r TITLEBAR="AI PACKAGE SELECTION"
 declare -i DLG_HIGH DLG_WIDE LST_HIGH
 declare -A INTENTS PACKAGES
 declare -a BROWSERS_BLINK BROWSERS_GECKO BROWSERS_WBKT2GTK BROWSERS_QTWEBKIT
-declare MOUNTPNT
 
 ################################################################################
 # Overly-cautious verification of required binaries
@@ -558,15 +557,6 @@ function UPDATE_PACMAN_MIRRORLIST {
     "${BIN[grep]}" '^Server' /etc/pacman.d/mirrorlist | "${BIN[sed]}" 's/\(.*\)/ \1/g'
   fi
   "${BIN[sudo]}" "${BIN[pacman]}" -Sy
-}
-
-function INSTALL_DIRECTORY {
-  ##############################################################################
-  local -r BAKTITLE="OS Mount Location"
-  local -r HELP_MSG="Where is the OS root filessystem mounted?"
-  ##############################################################################
-  DIALOG_DIRECTORY_SELECT "${TITLEBAR}" "${BAKTITLE}" /mnt || return "${?}"
-  MOUNTPNT="$(</tmp/selection)"
 }
 
 function INTENTS_BROWSERS {
@@ -2488,17 +2478,10 @@ function PACKAGESEL_ADDITIONAL {
   done <<< "$(sed 's/\t\t*/\t/g' packages)"
 }
 
-function VERIFY_EXIT {
-  ##############################################################################
-  local -r BAKTITLE="Verify Exit"
-  local -r HELP_MSG="Do you want to exit setup?"
-  ##############################################################################
-  DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" && exit 0
-}
-
 function WIZARD_MODE {
   UPDATE_PACMAN_MIRRORLIST
-  INSTALL_DIRECTORY || VERIFY_EXIT # don't trap -- alow cancel to mean "use /"
+                          # don't trap -- alow cancel to mean "use /"
+  SET_CHROOT_DIRECTORY || VERIFY_EXIT '(Selecting No will set the working directory to /)'
   until INTENTS_PURPOSE; do VERIFY_EXIT; done # desktop, server, rescue
   until INTENTS_RUNTIME; do VERIFY_EXIT; done # hardware, virtual, container
   if [[ ${INTENTS[runtime]} != container ]]; then
@@ -2596,7 +2579,7 @@ function REVIEW_MODE {
              'Finalize')
 
   "${BIN[printf]}" '#!/bin/sh\n%s %s %s --needed base %s\n' \
-    "${BIN[sudo]}" "${BIN[pacstrap]}" "${MOUNTPNT}" "${PACKAGES[*]}" > ~/ainstall.sh
+    "${BIN[sudo]}" "${BIN[pacstrap]}" "${OSCHROOT}" "${PACKAGES[*]}" > ~/ainstall.sh
 
   while true; do
     DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
