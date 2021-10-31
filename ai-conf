@@ -2242,6 +2242,8 @@ function SET_USER_GROUPS {
     if DIALOG_MULTI_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
       "${HELP_MSG/:/ for ${LOGINAME}:}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE'; then
       ADDLGRPS="$(</tmp/selection)"
+      ADDLGRPS="${ADDLGRPS# }"
+      ADDLGRPS="${ADDLGRPS% }"
       USE_PRIVILEGE "${BIN[usermod]}" -R "${OSCHROOT}" -G "${ADDLGRPS// /,}" "${LOGINAME}"
     fi
   done
