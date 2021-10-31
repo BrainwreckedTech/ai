@@ -614,6 +614,8 @@ function GENERATE_BOOT_STANZA_REFIND {
   CHOOSE_REFIND_THEME
   USETHEME="/EFI/refind/$(</tmp/selection)/icons"
   USETHEME="${USETHEME%/default}"
+  [[ -n ${MCODEIRD} ]] && MCODEIRD="initrd=${MCODEIRD}"
+  [[ -n ${MCODEIRD} ]] && MCODEIRD="${MCODEIRD/ / initrd=}"
 
   for (( LC=0 ; LC<${#KRN_IMGS[@]} ; LC++ )); do
     BTSTANZA="menuentry \"${OSR_NAME}${OSR_VRSN+ }${OSR_VRSN}${KRNTYPES[${LC}]+ }${KRNTYPES[${LC}]^}\" {\n"
