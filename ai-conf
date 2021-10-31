@@ -1860,7 +1860,7 @@ function CONFIGURE_SYSTEMD_RESOLVED {
   ##############################################################################
   if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
     USE_PRIVILEGE "${BIN[ln]}" -fs '/run/systemd/resolve/resolv.conf' "${OSCHROOT}/etc/resolv.conf"
-    USE_PRIVILEGE "${BIN[sed]}" -i 's/ [!UNAVAIL=return] / /g' "${OSCHROOT}/etc/nsswitch.conf"
+    USE_PRIVILEGE "${BIN[sed]}" -i 's/ \[\!UNAVAIL=return\] / /g' "${OSCHROOT}/etc/nsswitch.conf"
     USE_PRIVILEGE "${BIN[sed]}" -i 's/^#*MulticastDNS.*/MulticastDNS=no/g' "${OSCHROOT}/etc/systemd/resolved.conf"
   else
     USE_PRIVILEGE "${BIN[rm]}" "${OSCHROOT}/etc/resolv.conf" && touch "${OSCHROOT}/etc/resolv.conf"
