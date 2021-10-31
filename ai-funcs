@@ -236,7 +236,7 @@ function DIALOG_GEOMETRY_AUTO {
     msgbox) WIDE_PAD=4;  HIGH_PAD=4; unset LST_HIGH;;
   esac
 
-  if [[ ${DLG_TYPE} == drctry ]]; then
+  if [[ ${DLG_TYPE} == drctry ]] || [[ ${DLG_TYPE} == file ]]; then
     case "${BIN[dialog]}" in
       *Xdialog) echo "${GUI_WIDE}x${GUI_HIGH} ${LST_HIGH}";;
       *kdialog) echo "--geometry ${GUI_WIDE}x${GUI_HIGH}";;
