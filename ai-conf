@@ -1001,6 +1001,7 @@ function CONFIGURE_MKINITCPIO_MODULES {
   ##############################################################################
   local -a SUGGESTS
   local SELECTED PREV_CFG="$(GET_MKINITCPIO_MODULES)"
+  [[ ${PREV_CFG} == '[none]' ]] && unset PREV_CFG
 
   SELECTED='-'
   until [[ ${SELECTED} =~ ^[a-zA-Z0-9_' ']+$ ]]; do
