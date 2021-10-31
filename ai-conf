@@ -1141,7 +1141,7 @@ function CONFIGURE_LOCALE_LANGUAGE {
 
 function CONFIGURE_LOCALE_MESSAGES {
   local -r CFG_FILE="${OSCHROOT}/etc/locale.conf"
-  local -r CFG_ITEM="LC_MESSAGE"
+  local -r CFG_ITEM="LC_MESSAGES"
   ##############################################################################
   local -r BAKTITLE="Locale Messages"
   local -r HELP_MSG="Select your message style:"
