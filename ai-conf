@@ -2303,8 +2303,8 @@ function SET_USER_SHELL {
 
 function REVIEW_MODE {
   ##############################################################################
-  local -r BAKTITLE="Review Configuration"
-  local -r HELP_MSG=""
+  local BAKTITLE="Review Configuration"
+  local HELP_MSG=""
   ##############################################################################
   local -a MENU_TAG MENU_STR
   local CFG_LINE HOOK_MSG OPENPRTS SHUTPRTS RSLVLINK SCR_RSLT SVC_STAT SELECTED
