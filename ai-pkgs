@@ -546,7 +546,6 @@ function TRANSLATE_GPU_TYPE {
 
 function UPDATE_PACMAN_MIRRORLIST {
   local GEOIPURL="http://api.geoiplookup.net/" MRRRLIST="/etc/pacman.d/mirrorlist"
-  set -x
 
   GET_PRIVILEGE || exit 1
   # Avoid repeated attempts to update the mirrorlist -- once an hour is good enough
