@@ -6,7 +6,7 @@ source "${0%/*}/ai-funcs"
 # Here are more global variables to share amongst functions
 ################################################################################
 declare -r TITLEBAR="AI BOOT" ESP_GUID="$(GET_PARTITION_ID efisp)"
-declare OSCHROOT WIDEHACK="${GUI_WIDE}" ESPPARTS VALIDEFI
+declare WIDEHACK="${GUI_WIDE}" ESPPARTS VALIDEFI
 declare LDR_MTPT LDR_BDEV LDR_BPTH LDR_DISK LDR_PNUM LDR_PTYP LDR_UUID IMG_VLID
 declare IMG_MTPT IMG_BDEV IMG_BPTH IMG_DISK IMG_PNUM IMG_PTYP IMG_UUID IMG_SBVL
 declare FULLPATH MIRD_IMG RIRD_IMG
