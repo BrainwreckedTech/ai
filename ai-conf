@@ -2575,7 +2575,7 @@ function REVIEW_MODE {
         users) CREATE_NEW_USERS;;
       passwds) SET_USER_PASSWORD;;
        groups) SET_USER_GROUPS;;
-       shells) SET_USER_SHELLS;;
+       shells) SET_USER_SHELL;;
       sdsrvcs) ENABLE_SYSTEMD_SERVICES;;
          exit) exit 0;;
   esac
