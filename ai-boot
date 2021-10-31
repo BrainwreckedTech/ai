@@ -1373,6 +1373,8 @@ OSR_OSID="$("${BIN[grep]}" '^ID=' "${OSCHROOT}/etc/os-release" | "${BIN[cut]}" -
 # This is a useful debugging line to see what all the discovery found
 # set | grep '^IMG\|^KRN\|^LDR\|^MCO\|^OSR\|^RFS'; exit 0
 
+SET_CHROOT_DIRECTORY || VERIFY_EXIT '(Selecting No will set the chroot to /)'
+
 while true; do
   SELECT_BOOTLOADER || break
   case "$(</tmp/selection)" in
