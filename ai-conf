@@ -694,17 +694,17 @@ function CONFIGURE_HOSTS {
   USE_PRIVILEGE "${BIN[touch]}" "${CFG_FILE}"
 
   if ${BIN[grep]} -q '127.0.0.1\s\+localhost' "${CFG_FILE}"; then
-    USE_PRIVILEGE "${BIN[sed]}" "s/.*127\.0\.0\.1.*/127.0.0.1\tlocalhost.${LOCAL_DN}\tlocalhost" "${CFG_FILE}"
+    USE_PRIVILEGE "${BIN[sed]}" "s/.*127\.0\.0\.1.*/127.0.0.1\tlocalhost.${LOCAL_DN}\tlocalhost/g" "${CFG_FILE}"
   else
     USE_PRIVILEGE sh -c "'${BIN[printf]}' '%s\t%s\t%s\n' '127.0.0.1' 'localhost.${LOCAL_DN}' 'localhost' >> '${CFG_FILE}'"
   fi
   if ${BIN[grep]} -q '::1\s\+localhost' "${CFG_FILE}"; then
-    USE_PRIVILEGE "${BIN[sed]}" "s/.*::1.*/::1\t\tlocalhost.${LOCAL_DN}\tlocalhost" "${CFG_FILE}"
+    USE_PRIVILEGE "${BIN[sed]}" "s/.*::1.*/::1\t\tlocalhost.${LOCAL_DN}\tlocalhost/g" "${CFG_FILE}"
   else
     USE_PRIVILEGE sh -c "'${BIN[printf]}' '%s\t\t%s\t%s\n' '::1' 'localhost.${LOCAL_DN}' 'localhost' >> '${CFG_FILE}'"
   fi
   if ${BIN[grep]} -q "${LOCAL_HN}" "${CFG_FILE}"; then
-    USE_PRIVILEGE "${BIN[sed]}" "s/.*${LOCAL_HN}.*/${SELECTED}\t${LOCAL_HN}.${LOCAL_DN}\t${LOCAL_HN}" "${CFG_FILE}"
+    USE_PRIVILEGE "${BIN[sed]}" "s/.*${LOCAL_HN}.*/${SELECTED}\t${LOCAL_HN}.${LOCAL_DN}\t${LOCAL_HN}/g" "${CFG_FILE}"
   else
     USE_PRIVILEGE sh -c "'${BIN[printf]}' '%s\t%s\t%s\n' '${SELECTED}' '${LOCAL_HN}.${LOCAL_DN}' '${LOCAL_HN}' >> '${CFG_FILE}'"
   fi
