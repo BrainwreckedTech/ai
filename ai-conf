@@ -2194,6 +2194,7 @@ function SET_CHROOT_DIRECTORY {
   OSCHROOT="$(</tmp/selection)"
   [[ -z ${OSCHROOT} ]] && unset OSCHROOT
   [[ ${OSCHROOT} == '/'  ]] && unset OSCHROOT
+  OSCHROOT="${OSCHROOT%\/}"
 }
 
 function SET_USER_GROUPS {
