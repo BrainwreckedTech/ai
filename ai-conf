@@ -191,14 +191,14 @@ function GET_HOSTS {
 function GET_IPTABLES_PORTS_CLOSED_GLOBALLY {
   "${BIN[grep]}" 'OUTPUT.*DROP' "${OSCHROOT}/etc/iptables/iptables.rules" | \
   "${BIN[sed]}" 's/.*--dport \([0-9]\+\) .*/\1/g' | \
-  "${BIN[sort]}" -u | "${BIN[paste]}" -d\  -s
+  "${BIN[sort]}" -un | "${BIN[paste]}" -d\  -s
 }
 
 function GET_IPTABLES_PORTS_OPEN_GLOBALLY {
   "${BIN[grep]}" -- '--dport\s\+[0-9]\+.*ACCEPT' "${OSCHROOT}/etc/iptables/iptables.rules" | \
   "${BIN[grep]}" -v -- '-s [a-z.]\+\|-d [0-9./]\{9,18\}' | \
   "${BIN[sed]}" 's/.*--dport \([0-9]\+\) .*/\1/g' | \
-  "${BIN[sort]}" -n | "${BIN[paste]}" -d\  -s
+  "${BIN[sort]}" -un | "${BIN[paste]}" -d\  -s
 }
 
 function GET_LANGUAGES {
