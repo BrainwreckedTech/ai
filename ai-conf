@@ -580,7 +580,7 @@ function CONFIGURE_DEFAULT_EDITOR {
     "${HELP_MSG}" 'SUGGESTS' 'SUGGESTS' || return 1
   SELECTED="$(</tmp/selection)"
 
-  USE_PRIVILEGE sh -c "echo 'export EDITOR=${SELECTED}' > '${CFG_FILE}'"
+  USE_PRIVILEGE sh -c "echo '${CFG_ITEM}=${SELECTED}' > '${CFG_FILE}'"
 }
 
 function CONFIGURE_FAIL2BAN_SSHD {
