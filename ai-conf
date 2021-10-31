@@ -732,7 +732,7 @@ function CONFIGURE_IPTABLES {
 
   # Parse Gloabl Drops and Allows for unknown ports.
 
-  SYSSSHPN="$(GET_SSHD_LISTEN_INFO | "${BIN[sed]}" 's/.*Port\s*//g')"
+  SYSSSHPN="$(GET_SSHD_LISTEN_INFO | "${BIN[sed]}" 's/.*on //g;s/ /\n/g' | "${BIN[grep]}" -Po ':[0-9]{1,}$' | "${BIN[tr]}" -d ':')"
 
   EXISTING="$("${BIN[grep]}" -v '^\s*$\|^\s*#' <<< "${GLBLDROP}" | "${BIN[sed]}" 's/.*--dport\s*\([0-9]\+\).*/\1/g' | "${BIN[tr]}" '\n' ' ')"
   EXISTING+="$("${BIN[grep]}" -v '^\s*$\|^\s*#' <<< "${GLBLACPT}" | "${BIN[sed]}" 's/.*--dport\s*\([0-9]\+\).*/\1/g' | "${BIN[tr]}" '\n' ' ')"
