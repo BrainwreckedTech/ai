@@ -624,29 +624,31 @@ function GENERATE_BOOT_STANZA_REFIND {
     BTSTANZA+="\tloader\t${KRN_IMGS[${LC}]}\n"
     [[ -n ${MIR_IMGS[${LC}]} ]] && BTSTANZA+="\tinitrd\t${MIR_IMGS[${LC}]}\n"
     BTSTANZA+="\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+    shopt -s extglob
     if [[ ${ADDLKCLP} =~ quiet ]]; then
       STNZATTL='Verbose startup'
       [[ -z ${PLMTHKCL} ]] && STNZATTL="${STNZATTL#V/No splash & v}"
       BTSTANZA+="\tsubmenuentry \"${STNZATTL}\" {\n"
-      BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+      BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+="\t}\n"
     fi
     if [[ -e ${OSCHROOT}/etc/systemd/system/display-manager.service ]]; then
       BTSTANZA+='\tsubmenuentry "Boot to CLI (no display manager) {\n'
-      BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+      BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+='\t}\n'
     fi
     if [[ ${MIR_IMGS[${LC}]} != "${RIR_IMGS[${LC}]}" ]] && [[ -n ${RIR_IMGS[${LC}]} ]]; then
       BTSTANZA+='\tsubmenuentry "Boot with fallback InitRAMFS" {\n'
       BTSTANZA+="\t\tinitrd\t${RIR_IMGS[${LC}]}\n"
-      BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+      BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+='\t}\n'
     fi
     BTSTANZA+='\tsubmenuentry "Boot to systemd rescue.target" {\n'
     [[ -n ${RIR_IMGS[${LC}]} ]] && BTSTANZA+="\t\tinitrd ${RIR_IMGS[${LC}]}\n"
-    BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
+    BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
     BTSTANZA+='\t}\n'
     BTSTANZA+='}'
+    shopt -u extglob
   done
 
   IFS=$'\n' read -r -d '' -a ASTANZAS < <(GET_ACTIVE_STANZA_NAMES_REFIND)
@@ -780,13 +782,14 @@ function GENERATE_BOOT_STANZA_SYSLINUX {
     BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP}${LUKSKCLP+ }${LUKSKCLP}${PLYMKCLP+ }${PLYMKCLP}\n"
     [[ -n ${MAININIT} ]] && BTSTANZA+="\tINITRD\t${MAININIT}\n\n"
 
+    shopt -s extglob
     if [[ ${ADDLKCLP} =~ quiet ]]; then
       BTSTANZA+="\tLABEL\t${OSR_OSID}-verbose\n"
       STNZATTL="Verbose startup"
       [[ -z ${PLMTHKCL} ]] && STNZATTL="${STNZATTL#V/No splash & v}"
       BTSTANZA+="\tMENU LABEL ${STNZATTL}\n"
       BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
-      BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}\n"
+      BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP}\n"
       [[ -n ${MAININIT} ]] && BTSTANZA+="\tINITRD\t${MAININIT}\n\n"
     fi
 
@@ -794,7 +797,7 @@ function GENERATE_BOOT_STANZA_SYSLINUX {
       BTSTANZA+="\tLABEL\t${OSR_OSID}-cli\n"
       BTSTANZA+="\tMENU LABEL Boot to console\n"
       BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
-      BTSTANZA+="\t\APPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target\n"
+      BTSTANZA+="\t\APPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target\n"
       [[ -n ${MAININIT} ]] && BTSTANZA+="\tINITRD\t${MAININIT}\n\n"
     fi
 
@@ -802,14 +805,15 @@ function GENERATE_BOOT_STANZA_SYSLINUX {
       BTSTANZA+="\tLABEL\t${OSR_OSID}-fallback\n"
       BTSTANZA+="\tMENU LABEL Startup with fallback initramfs\n"
       BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
-      BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP}\n"
+      BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP}\n"
       [[ -n ${RESCINIT} ]] && BTSTANZA+="\tINITRD\t${RESCINIT}\n\n"
     fi
 
+    shopt -u extglob
     BTSTANZA+="\tLABEL\t${OSR_OSID}-rescue\n"
     BTSTANZA+="\tMENU LABEL Boot to systemd rescue.target\n"
     BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
-    BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/ quiet / /}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target\n"
+    BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=rescue.target\n"
     [[ -n ${RESCINIT} ]] && BTSTANZA+="\tINITRD\t${RESCINIT}\n\n"
 
     BTSTANZA+="MENU END ${OSR_OSID}"
