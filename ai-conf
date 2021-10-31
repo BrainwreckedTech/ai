@@ -571,7 +571,7 @@ function CONFIGURE_DEFAULT_EDITOR {
   KNOWNS+=(vim:/usr/bin/vim   vis:/usr/bin/vis)
 
   for KNOWN in "${KNOWNS[@]}"; do
-    if [[ -e "${OSCHROOT}/${KNOWN#*:}" ]]; then
+    if [[ -e "${OSCHROOT}${KNOWN#*:}" ]]; then
       SUGGESTS+=("${KNOWN%:*}"); DESCRIPS+=("${KNOWN#*:}")
     fi
   done
