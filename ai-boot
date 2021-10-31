@@ -964,7 +964,7 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
 function INSTALL_EFI_BOOT_ENTRY {
   local EFI_PATH BT_LABEL CURRENT
   case "${SYSTEM[cpu-arch]}" in
-    *86)
+    x86_64)
       case "${SYSTEM[fw-bits]}" in
         64) SUFFIX='x64';;
         32) SUFFIX='ia32';;
