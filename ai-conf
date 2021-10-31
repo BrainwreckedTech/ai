@@ -452,7 +452,7 @@ function GET_TIMEZONE {
        full) echo "${TIMEZONE}";;
     esac
   else
-    echo '[not set]'
+    [[ ${1} == short ]] && echo "[not set]"
   fi
 }
 
