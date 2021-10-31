@@ -1302,7 +1302,10 @@ IMG_PTYP="$(${BIN[lsblk]} -lno NAME,PTTYPE | "${BIN[grep]}" "${IMG_BDEV##*/}" | 
 IMG_PTYP="${IMG_PTYP/dos/msdos}"
 IMG_UUID="$("${BIN[lsblk]}" -lno NAME,PARTUUID | "${BIN[grep]}" "${IMG_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
 IMG_PLBL="$("${BIN[lsblk]}" -lno NAME,PARTLABEL | "${BIN[grep]}" "${IMG_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
-IMG_SBVL="$("${BIN[mount]}" | "${BIN[grep]}" "on ${IMG_MTPT} type" | "${BIN[grep]}" subvol | "${BIN[sed]}" 's/.*subvol=\(.*\),.*/\1/g')"
+IMG_FSYS="$("${BIN[lsblk]}" -lno NAME,FSTYPE | "${BIN[grep]}" "${IMG_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+IMG_FLBL="$("${BIN[lsblk]}" -lno NAME,LABEL | "${BIN[grep]}" "${IMG_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+IMG_FUID="$("${BIN[lsblk]}" -lno NAME,UUID | "${BIN[grep]}" "${IMG_BDEV##*/}" | "${BIN[sed]}" 's/.* //g')"
+IMG_SBVL="$("${BIN[mount]}" | "${BIN[grep]}" "on ${IMG_MTPT} type" | "${BIN[grep]}" subvol | "${BIN[sed]}" 's/.*subvol=\(.*\),*.*)/\1/g')"
 IMG_BPTH="${IMG_SBVL}${IMG_PATH#${IMG_MTPT}}"
 
 ################################################################################
