@@ -565,7 +565,7 @@ function CONFIGURE_DEFAULT_EDITOR {
   local -a SUGGESTS DESCRIPS
   local SELECTED KNOWN KNOWNS PREV_CFG="$(GET_DEFAULT_EDITOR)"
 
-  KNOWNS+=(dte:/usr/bin/dte   e3:/usr/bin/e3       helix:/usr/bin/helix)
+  KNOWNS=(dte:/usr/bin/dte   e3:/usr/bin/e3       helix:/usr/bin/helix)
   KNOWNS+=(helix:/usr/bin/hx  kakoune:/usr/bin/kak mcedit:/usr/bin/mcedit)
   KNOWNS+=(nano:/usr/bin/nano neovim:/usr/bin/nvim vi:/usr/bin/vi)
   KNOWNS+=(vim:/usr/bin/vim   vis:/usr/bin/vis)
