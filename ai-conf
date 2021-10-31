@@ -1937,7 +1937,7 @@ function CONFIGURE_TIMEZONE {
   DIALOG_FILE_SELECT "${TITLEBAR}" "${BAKTITLE}" "${OSCHROOT}${PREV_CFG}" || return 1
   SELECTED="$(</tmp/selection)"
   SELECTED="${SELECTED#"${OSCHROOT}"}"
-  USE_PRIVILEGE "${BIN[ln]}" -fs "${SELECTED}" "${CFG_FILE}"
+  USE_PRIVILEGE "${BIN[ln]}" -fsT "${SELECTED}" "${CFG_FILE}"
 }
 
 function CONFIGURE_VCONSOLE_FONT {
