@@ -51,8 +51,8 @@ declare -ra PORTLIST=(
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in cp curl date env genfstab head ip ln localedef pacman-key passwd \
-  paste readlink rename stat systemctl tail tar useradd usermod; do
+for CMD in arch-chroot cp curl date env genfstab head ip ln localedef pacman-key \
+  passwd paste readlink rename stat systemctl tail tar useradd usermod; do
     BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
@@ -2149,6 +2149,23 @@ function GENERATE_LOCALES {
   set +e
 }
 
+function GENERATE_INITRAMFS {
+  local -r CFG_FILE="${OSCHROOT}/etc/mkinitcpio.conf"
+  [[ -e ${CFG_FILE} ]] || return 0
+  ##############################################################################
+  local -r BAKTITLE="Generate InitRAMFS"
+  local -r HELP_MSG="Generate InitRAMFS?"
+  ##############################################################################
+  if DIALOG_YESNO "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}"; then
+    if [[ -n ${OSCHROOT} ]]; then
+      USE_PRIVILEGE "${BIN[arch-chroot]}" "${OSCHROOT}" 'mkinitcpio -P'
+    else
+      # Allow a naked call here since we've verified mkinitcpio.conf exists
+      USE_PRIVILEGE "${BIN[arch-chroot]}" mkinitcpio -P
+    fi
+  fi
+}
+
 function SELECT_USER {
   ##############################################################################
   local -r BAKTITLE="${1}"
@@ -2569,7 +2586,7 @@ function REVIEW_MODE {
        groups) SET_USER_GROUPS;;
        shells) SET_USER_SHELL;;
       sdsrvcs) ENABLE_SYSTEMD_SERVICES;;
-         exit) exit 0;;
+         exit) GENERATE_INITRAMFS; exit 0;;
   esac
 
   done
@@ -2622,8 +2639,5 @@ while true; do
   WIZARD_MODE
   REVIEW_MODE
 done
-
-#echo "FINALIZING SETUP"
-#"${BIN[arch-chroot]}" "${OSCHROOT}" 'mkinitcpio -P'
 
 exit 0
