@@ -286,7 +286,7 @@ function GET_NANORC_OPTIONS {
         NANOOPTS=$("${BIN[grep]}" -v '^\s*#' <<< "${NANOOPTS}" | "${BIN[sed]}" 's/^\s*set\s*//g');;
     esac
     NANOOPTS="$("${BIN[sort]}" -u <<< "${NANOOPTS}" | ${BIN[paste]} -d\  -s)"
-    [[ -n ${NANOTOPS} ]] && echo "${NANOOPTS}" || [[ ${1} == enabled ]] && echo '[none set]'
+    [[ -n ${NANOOPTS} ]] && echo "${NANOOPTS}" || [[ ${1} == enabled ]] && echo '[none set]'
   else
     [[ ${1} == enabled ]] && echo '[no config]'
   fi
