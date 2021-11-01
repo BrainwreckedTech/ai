@@ -1549,7 +1549,7 @@ function CONFIGURE_PACMAN_REPOS {
                   ;;
                 *archzfs*)
                   DWNLDURI='https://github.com/archzfs/archzfs/wiki'
-                  USE_PRIVILEGE sh -c "'${BIN[curl]}' -s -L  '${DWNLDURI}' | '${BIN[sed]}' ':a;N;\$!ba;s|.*<code>\(\[archzfs\]\n\(Server = [0-9a-z:/.$]*\n\)\{3,\}\)</code>.*|\1|g;' > '${OSCHROOT}/etc/pacman.d/archzfs-mirrorlist'"
+                  USE_PRIVILEGE sh -c "'${BIN[curl]}' -s -L  '${DWNLDURI}' | '${BIN[sed]}' ':a;N;\$!ba;s|.*<code>\(\[archzfs\]\n\(Server = [0-9a-z:/.$]*\n\)\{3,\}\)</code>.*|\1|g;' | '${BIN[grep]}' -v '\[archzfs\]' > '${OSCHROOT}/etc/pacman.d/archzfs-mirrorlist'"
                   ;;
               esac
             fi
