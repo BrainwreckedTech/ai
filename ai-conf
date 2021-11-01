@@ -596,10 +596,10 @@ function CONFIGURE_FAIL2BAN_SSHD {
     USE_PRIVILEGE "${BIN[mv]}" "${CFG_FILE}" "${CFG_FILE}.$("${BIN[date]}" +%Y-%m-%d_%H:%M:%S)"
   fi
 
-  LOCAL_HN="$(<"${OSCROOT}/etc/hostname")"
+  LOCAL_HN="$(<"${OSCHROOT}/etc/hostname")"
   IPFROMHF="$("${BIN[grep]}" "[0-9.]\{7,15\}.*${LOCAL_HN}" "${OSCHROOT}" | "${BIN[sed]}" 's/\s.*//g')"
   if ! [[ ${IPFROMHF} =~ ^127 ]]; then
-    case "${IPFROMHN}" in
+    case "${IPFROMHF}" in
            10.*) SNSUFFIX='/8';;
       169.254.*) SNSUFFIX='/16';;
       192.168.*) SNSUFFIX='/24';;
@@ -891,7 +891,7 @@ function CONFIGURE_IPTABLES {
 
   if [[ -e "${CFG_FILE}" ]]; then
     BACKUPDT="$("${BIN[date]}" +%Y-%m-%d_%H:%M:%S)"
-    USE_PRIVILEGE "${BIN[mv]}" "${CFG_FILE}" "${CFG_FILE}.${BAKUPDT}"
+    USE_PRIVILEGE "${BIN[mv]}" "${CFG_FILE}" "${CFG_FILE}.${BACKUPDT}"
   fi
   USE_PRIVILEGE sh -c "echo '${NEWIPTBL}' > '${CFG_FILE}'"
   if [[ -n ${BACKUPDT} ]]; then
