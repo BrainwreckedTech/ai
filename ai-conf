@@ -1800,6 +1800,8 @@ function CONFIGURE_SUDO {
       elif [[ -n ${INCL_DIR} ]]; then
         # If not and @includedir was set, search @includedir for the option
         CFLOCATE="$("${BIN[sudo]}" sh -c "'${BIN[grep]}' -l '\s*#*\s*${SERCHSTR}' ${CFG_FILE}.d/* ")"
+        # If not found, create a new file
+        [[ -n ${CFLOCATE} ]] && CFLOCATE="${OSCHROOT}${CFG_FILE}.d/${SELECTED}"
       fi
 
       if [[ ${SWITCHED} == on ]]; then
