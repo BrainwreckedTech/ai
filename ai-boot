@@ -613,7 +613,7 @@ function GENERATE_BOOT_STANZA_REFIND {
   CFG_FILE="${LDR_MTPT}/EFI/refind/refind.conf"
   CHOOSE_REFIND_THEME
   USETHEME="/EFI/refind/$(</tmp/selection)/icons"
-  USETHEME="${USETHEME%/default}"
+  USETHEME="${USETHEME/\/default/}"
   [[ -n ${MCODEIRD} ]] && MCODEIRD="initrd=${MCODEIRD}"
   [[ -n ${MCODEIRD} ]] && MCODEIRD="${MCODEIRD/ / initrd=}"
 
