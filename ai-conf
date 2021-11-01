@@ -2068,17 +2068,19 @@ function ENABLE_SYSTEMD_SERVICES {
 
   [[ -e "${OSCHROOT}/usr/lib/systemd/system/plymouth-start.service" ]] && PLYMOUTH=true
 
-  VALUNITS=(acpid.service connman.service cpupower.service cronie.service
-            cups.service dhcpcd.service docker.service dovecot.service
-            fail2ban.service fstrim.timer gdm.service gitea.service
-            haveged.service httpd.service iptables.service lightdm.service
-            lm_sensors.service lxdm.service mariadb.service minidlna.service
-            murmur.service NetworkManager.service nfs-client.target
-            nfs-server.service nginx.service nmb.service ntpd.service
-            paccache.timer php-fpm.service pkgfile-update.timer postfix.service
-            postgresql.service qemu-ga.service redis.service remote-fs.target
-            rngd.service rpcbind.service rspamd.service sddm.service
-            smartd.service smb.service sshd.service systemd-networkd.service
+  VALUNITS=(acpid.service connman.service connman-wait-online.service
+            cpupower.service cronie.service cups.service dhcpcd.service
+            docker.service dovecot.service fail2ban.service fstrim.timer
+            gdm.service gitea.service haveged.service httpd.service
+            iptables.service lightdm.service lm_sensors.service lxdm.service
+            mariadb.service minidlna.service murmur.service
+            NetworkManager.service NetworkManger-wait-online.service
+            nfs-client.target nfs-server.service nginx.service nmb.service
+            ntpd.service paccache.timer php-fpm.service pkgfile-update.timer
+            postfix.service postgresql.service qemu-ga.service redis.service
+            remote-fs.target rngd.service rpcbind.service rspamd.service
+            sddm.service smartd.service smb.service sshd.service
+            systemd-networkd.service systemd-networkd-wait-online.service
             systemd-resolved.service vsftpd.service xdm.service
             zfs-import-cache.service zfs-import.target zfs-mount.service zfs.target)
 
