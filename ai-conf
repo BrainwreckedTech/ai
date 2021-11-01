@@ -543,7 +543,7 @@ function IS_POLICYKIT_ROOTPW_SET {
 }
 
 function IS_SSHD_ENABLED {
-  set -- ${OSCHROOT}/etc/systemd/system/*/sshd.service; test -f "${1}"
+  set -- "${OSCHROOT}"/etc/systemd/system/*/sshd.service; test -f "${1}"
 }
 
 function IS_STICKYDIRS_FIXED {
@@ -551,7 +551,7 @@ function IS_STICKYDIRS_FIXED {
 }
 
 function IS_SYSTEMD_RESOLVED_ENABLED {
-  set -- ${OSCHROOT}/etc/systemd/system/*/systemd-resolved.service; test -f "${1}"
+  set -- "${OSCHROOT}"/etc/systemd/system/*/systemd-resolved.service; test -f "${1}"
 }
 
 function CONFIGURE_DEFAULT_EDITOR {
@@ -1420,7 +1420,7 @@ function CONFIGURE_OPENSSH_OPTIONS {
   done
 
   for (( LC=0 ; LC<${#SUGGESTS[@]} ; LC++ )); do
-    if [[ ${SELSTATE[${LC}]} != ${NEWSTATE[${LC}]} ]]; then
+    if [[ ${SELSTATE[${LC}]} != "${NEWSTATE[${LC}]}" ]]; then
       [[ ${NEWSTATE[${LC}]} == on ]] && WRTSTATE='yes' || WRTSTATE='no'
       [[ ${SUGGESTS[${LC}]} == PermitRootLogin ]] \
         && [[ ${WRTSTATE} == yes ]] && WRTSTATE='prohibit-password'
@@ -1605,7 +1605,7 @@ function CONFIGURE_PLYMOUTH {
   SELECTED="$(</tmp/selection)"
 
   if ! "${BIN[grep]}" 'HOOKS' "${OSCHROOT}/etc/mkinitcpio.conf" | "${BIN[grep]}" -v '^\s*#' | "${BIN[grep]}" 'plymouth'; then
-    USE_PRIVILEGE ${BIN[sed]} -i 's/autodetect/plymouth autodetect/g' "${OSCHROOT}/etc/mkinitcpio.conf"
+    USE_PRIVILEGE "${BIN[sed]}" -i 's/autodetect/plymouth autodetect/g' "${OSCHROOT}/etc/mkinitcpio.conf"
   fi
 
   if ! [[ -e "${OSCHROOT}/usr/share/plymouth/themes/spinner/watermark.png" ]]; then
@@ -2142,7 +2142,7 @@ function GENERATE_LOCALES {
       if [[ -f ${LOCALES}/${LOCALE} ]]; then
         INPUT="${LOCALE}"
       else
-        INPUT="$(echo ${LOCALE} | "${BIN[sed]}" 's/\([^.]*\)[^@]*\(.*\)/\1\2/')"
+        INPUT="$(echo "${LOCALE}" | "${BIN[sed]}" 's/\([^.]*\)[^@]*\(.*\)/\1\2/')"
       fi
       USE_PRIVILEGE "${BIN[localedef]}" -i "${INPUT}" -c -f "${CHARSET}" -A "${OSCHROOT}/usr/share/locale/locale.alias" --prefix "${OSCHROOT}" "${LOCALE}"
       echo ' done'
