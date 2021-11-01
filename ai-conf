@@ -1777,6 +1777,8 @@ function CONFIGURE_SUDO {
       WRITESTR="${CONF_STR[${LC}]}"   # Derive what to write out based search regex
       WRITESTR="${WRITESTR//\\s\*/ }" # Convert searches for whitespace to a single space
       WRITESTR="${WRITESTR// = /=}"   # Remove whitespace around equals sign
+      WRITESTR="${WRITESTR//\\[/]}"   # Remove escaping from opening bracket
+      WRITESTR="${WRITESTR//\\[/]}"   # Remove escaping from closing bracket
       WRITESTR="${WRITESTR//\\(/(}"   # Remove escaping from opening parenthesis
       WRITESTR="${WRITESTR//\\)/)}"   # Remove escaping from closing parenthesis
       WRITESTR="${WRITESTR//( /(}"    # Remove space after opening parenthesis
