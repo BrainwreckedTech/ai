@@ -2144,7 +2144,7 @@ function GENERATE_LOCALES {
       else
         INPUT="$(echo ${LOCALE} | "${BIN[sed]}" 's/\([^.]*\)[^@]*\(.*\)/\1\2/')"
       fi
-      USE_PRIVILEGE "${BIN[localedef]}" -i "${INPUT}" -c -f "${CHARSET}" -A "${OSCHROOT}/usr/share/locale/locale.alias" "${LOCALE}"
+      USE_PRIVILEGE "${BIN[localedef]}" -i "${INPUT}" -c -f "${CHARSET}" -A "${OSCHROOT}/usr/share/locale/locale.alias" --prefix "${OSCHROOT}" "${LOCALE}"
       echo ' done'
     else
       echo "error: Bad entry '${LOCALE} ${CHARSET}'"
