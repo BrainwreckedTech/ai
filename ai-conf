@@ -1509,12 +1509,14 @@ function CONFIGURE_PACMAN_REPOS {
   local -a SUGGESTS DESCRIPS SELSTATE
   local DWNLDURI PMOPTION REPOLINE SELECTED LC
 
-  SUGGESTS+=(core extra community multilib archzfs zfs-linux chaotic-aur andontie-aur)
+  SUGGESTS+=(core extra community multilib archzfs zfs-linux zfs-linux-lts zfs-linux-zen chaotic-aur andontie-aur)
   DESCRIPS+=('Packages for booting, networking, building, filesystems, and system setup.'
              'Packages that do not fit into the definition of core (Xorg, browsers, etc.).'
              'Packages that have been adopted by Trusted Users from the Arch User Repository.'
              '32-bit software and libraries for 64-bit systems.'
-             'Packages for ZFS on Arch Linux.'
+             'Packages for ZFS on Arch Linux (Standard Kernel).'
+             'Packages for ZFS on Arch Linux (LTS Kernel).'
+             'Packages for ZFS on Arch Linux (Zen Kernel).'
              'Kernel archive for for when the official repos pull ahead of archzfs.'
              'Automated builds of AUR packages submitted by the community'
              'Automated builds of AUR packages submitted by the community')
