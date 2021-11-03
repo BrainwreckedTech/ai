@@ -632,8 +632,8 @@ function GENERATE_BOOT_STANZA_REFIND {
       BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+="\t}\n"
     fi
-    if [[ -e ${OSCHROOT}/etc/systemd/system/display-manager.service ]]; then
-      BTSTANZA+='\tsubmenuentry "Boot to CLI (no display manager) {\n'
+    if [[ -L ${OSCHROOT}/etc/systemd/system/display-manager.service ]]; then
+      BTSTANZA+='\tsubmenuentry "Boot to CLI (no display manager)" {\n'
       BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP} systemd.unit=multi-user.target${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+='\t}\n'
     fi
@@ -793,7 +793,7 @@ function GENERATE_BOOT_STANZA_SYSLINUX {
       [[ -n ${MAININIT} ]] && BTSTANZA+="\tINITRD\t${MAININIT}\n\n"
     fi
 
-    if [[ -e ${OSCHROOT}/etc/systemd/system/display-manager.service ]]; then
+    if [[ -L ${OSCHROOT}/etc/systemd/system/display-manager.service ]]; then
       BTSTANZA+="\tLABEL\t${OSR_OSID}-cli\n"
       BTSTANZA+="\tMENU LABEL Boot to console\n"
       BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
@@ -895,7 +895,7 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
 
   for (( LC=0 ; LC<${#KRN_IMGS[@]} ; LC++ )); do
     for CFG_TYPE in common gabby nogui oops rescue; do
-      [[ ! -e ${DISP_MGR} ]] && [[ ${CFG_TYPE} == nogui ]] && continue
+      [[ ! -L ${DISP_MGR} ]] && [[ ${CFG_TYPE} == nogui ]] && continue
       [[ ! ${ADDLKCLP} =~ quiet ]] && [[ ${CFG_TYPE} == verbose ]] && continue
       [[ -z ${RIR_IMGS[${LC}]} ]] || [[ ${CFG_TYPE} == oops ]] && ${SAME_IRD} && continue
       case "${CFG_TYPE}" in
