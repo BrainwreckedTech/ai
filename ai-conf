@@ -1635,6 +1635,8 @@ function CONFIGURE_PLYMOUTH {
   if ! "${BIN[grep]}" -q $'\x1b.\x3f\x32\x35\x68' "${OSCHROOT}/etc/issue"; then
     USE_PRIVILEGE sh -c "setterm -cursor on >> '${OSCHROOT}/etc/issue'"
   fi
+
+  USE_PRIVILEGE "${BIN[sed]}" -i "s/Theme=.*/Theme=${SELECTED}-custom/" "${OSCHROOT}/etc/plymouth/plymouthd.conf"
 }
 
 function CONFIGURE_SMARTD_DEVICESCAN {
