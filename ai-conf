@@ -1942,7 +1942,7 @@ function CONFIGURE_TIMEZONE {
 
   [[ -z ${PREV_CFG} ]] && PREV_CFG="${OSCHROOT}/usr/share/zoneinfo/"
 
-  DIALOG_FILE_SELECT "${TITLEBAR}" "${BAKTITLE}" "${OSCHROOT}${PREV_CFG}" || return 1
+  DIALOG_FILE_SELECT "${TITLEBAR}" "${BAKTITLE}" "${PREV_CFG}" || return 1
   SELECTED="$(</tmp/selection)"
   SELECTED="${SELECTED#"${OSCHROOT}"}"
   USE_PRIVILEGE "${BIN[ln]}" -fsT "${SELECTED}" "${CFG_FILE}"
