@@ -627,7 +627,7 @@ function GENERATE_BOOT_STANZA_REFIND {
     shopt -s extglob
     if [[ ${ADDLKCLP} =~ quiet ]]; then
       STNZATTL='Verbose startup'
-      [[ -z ${PLMTHKCL} ]] && STNZATTL="${STNZATTL#V/No splash & v}"
+      [[ -n ${PLYMKCLP} ]] && STNZATTL="${STNZATTL/V/No splash and v}"
       BTSTANZA+="\tsubmenuentry \"${STNZATTL}\" {\n"
       BTSTANZA+="\t\toptions\t\"${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP}${MCODEIRD+ }${MCODEIRD//\//\\\\}\"\n"
       BTSTANZA+="\t}\n"
@@ -786,7 +786,7 @@ function GENERATE_BOOT_STANZA_SYSLINUX {
     if [[ ${ADDLKCLP} =~ quiet ]]; then
       BTSTANZA+="\tLABEL\t${OSR_OSID}-verbose\n"
       STNZATTL="Verbose startup"
-      [[ -z ${PLMTHKCL} ]] && STNZATTL="${STNZATTL#V/No splash & v}"
+      [[ -z ${PLMTHKCL} ]] && STNZATTL="${STNZATTL#V/No splash and v}"
       BTSTANZA+="\tMENU LABEL ${STNZATTL}\n"
       BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
       BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP}\n"
@@ -900,7 +900,7 @@ function GENERATE_BOOT_STANZA_SYSTEMD_BOOT {
       [[ -z ${RIR_IMGS[${LC}]} ]] || [[ ${CFG_TYPE} == oops ]] && ${SAME_IRD} && continue
       case "${CFG_TYPE}" in
         common) TCFGTYPE="Normal";;
-         gabby) [[ -z ${PLMTHKCL} ]] && TCFGTYPE="Verbose" || TCFGTYPE="No Splash & Verbose";;
+         gabby) [[ -z ${PLMTHKCL} ]] && TCFGTYPE="Verbose" || TCFGTYPE="No splash and verbose";;
          nogui) TCFGTYPE="CLI";;
           oops) TCFGTYPE="Fallback";;
         rescue) TCFGTYPE="Rescue";;
