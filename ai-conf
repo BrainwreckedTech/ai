@@ -2068,7 +2068,7 @@ function ENABLE_SYSTEMD_SERVICES {
   local -a SUGGESTS DESCRIPS SELSTATE VALUNITS
   local SDUFPATH=usr/lib/systemd/system
   local SDUFIPTH=etc/systemd/system
-  local DSPLYMGR UNITFILE UNITPATH LC PLYMOUTH=false
+  local DSPLYMGR OVERRIDE UNITFILE UNITPATH LC PLYMOUTH=false
 
   [[ -e "${OSCHROOT}/usr/lib/systemd/system/plymouth-start.service" ]] && PLYMOUTH=true
 
@@ -2116,6 +2116,13 @@ function ENABLE_SYSTEMD_SERVICES {
     if [[ ${SELSTATE[${LC}]} == on ]] && [[ ! ${SELECTED} =~ ${SUGGESTS[${LC}]} ]]; then
       USE_PRIVILEGE "${BIN[systemctl]}" ${OSCHROOT+--root=}${OSCHROOT} disable "${SUGGESTS[${LC}]}"
     elif [[ ${SELSTATE[${LC}]} == off ]] && [[ ${SELECTED} =~ ${SUGGESTS[${LC}]} ]]; then
+      if [[ ${SUGGESTS[${LC}]} == sshd.service ]]; then
+        OVERRIDE="${OSCHROOT}/etc/systemd/system/sshd.service.d/override.conf"
+        if [[ ! -e ${OVERRIDE} ]]; then
+          USE_PRIVILEGE "${BIN[mkdir]}" -p "${OVERRIDE%override.conf}"
+          USE_PRIVILEGE sh -c "'${BIN[printf]}' '[Unit]\nAfter=network-online.target' > '${OVERRIDE}'"
+        fi
+      fi
       USE_PRIVILEGE "${BIN[systemctl]}" ${OSCHROOT+--root=}${OSCHROOT} enable "${SUGGESTS[${LC}]}"
     fi
   done
