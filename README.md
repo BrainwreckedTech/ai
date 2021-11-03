@@ -3,6 +3,21 @@ AI is a set of scripts utilizing (X)dialog tp help the user set up a
 new system.  The process is divided into five independent parts,
 so you can omit the use of any assistance you don't want.
 
+## Philosophy
+
+* The user should be in control of most all of the process.
+* Only stop the user from making invalid decisions
+    -  Like setting an EFI System Partition size less than the minimum
+	   for the intended filesystem (32MiB for FAT32).
+* Suggestions and defaults can be provided, but the user should retain
+  ultimate control.
+* When intervening on the user's behalf, only changes that make no
+  difference either way should go unprompted
+    - like when adding a systemd override for sshd to add
+	  `After=network-online.target` to the `Unit` section of the service
+	  file.
+* Otherwise, the user should be prompted if they want something done.
+
 ## `ai-parts`
 Partition a disk for use in either a single-boot Linux-only or 
 dual-boot Linux/Windows setup.  Takes full consideration of both
