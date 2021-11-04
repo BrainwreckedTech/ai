@@ -1161,6 +1161,8 @@ function INSTALL_SYSLINUX {
     USE_PRIVILEGE "${BIN[cp]}" -np "${IMG_PATH}/syslinux/syslinux.cfg" "${LDR_PATH}/syslinux.cfg"
     [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY syslinux
   else
+   USE_PRIVILEGE "${BIN[sfdisk]}" -A "${LDR_DISK}" "${LDR_PNUM}"
+   USE_PRIVILEGE "${OSCHROOT}/usr/bin/extlinux" --install "${LDR_PATH}/syslinux"
    USE_PRIVILEGE "${BIN[dd]}" bs=440 count=1 conv=notrunc if="${LDR_ULIB}/bios/mbr.bin" of="${LDR_DISK}"
   fi
 }
