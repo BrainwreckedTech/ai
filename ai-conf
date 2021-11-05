@@ -2015,7 +2015,7 @@ function CONFIGURE_VIDEO_ACCELERATION {
 		
 		case \"\\\$(lsmod)\" in
 		   *amdgpu*) ldn=radeonsi; vdn=radeonsi;;
-		      i915*) [ \\\$(gmn) -gt 60 ] && ldn=iHD || ldn=i965; vdn=va_gl;;
+		    *i915*) [ \\\$(gmn) -gt 60 ] && ldn=iHD || ldn=i965; vdn=va_gl;;
 		  *nouveau*) ldn=nouveau; vdn=nouveau;;
 		   *nvidia*) ldn=vdpau; vdn=nvidia;;
 		esac

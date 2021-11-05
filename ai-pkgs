@@ -2234,7 +2234,7 @@ function PACKAGESEL_XORG_GPU {
 
     case "${PCIVENID}" in
       1002) GPU_TYPE="$(GET_GPU_TYPE_AMD "${PCIDEVST}")";;
-      8086) GPU_TYPE="$(GET_GPU_TYPE_INTEL "${PCIDEVID}")";;
+      8086) GPU_TYPE="$(GET_CPU_TYPE_INTEL "${PCIDEVID}")";;
       10de) GPU_TYPE="$(GET_GPU_TYPE_NVIDIA "${PCIDEVST}")";;
     esac
 
