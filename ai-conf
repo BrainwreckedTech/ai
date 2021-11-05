@@ -2086,13 +2086,14 @@ function ENABLE_SYSTEMD_SERVICES {
             sddm.service smartd.service smb.service sshd.service
             systemd-networkd.service systemd-networkd-wait-online.service
             systemd-resolved.service vsftpd.service xdm.service
-            zfs-import-cache.service zfs-import.target zfs-mount.service zfs.target)
+            xdm-archlinux.service zfs-import-cache.service zfs-import.target
+            zfs-mount.service zfs.target)
 
   for UNITFILE in "${VALUNITS[@]}"; do
     UNITPATH="${OSCHROOT}/${SDUFPATH}/${UNITFILE}"
     if [[ -e "${UNITPATH}" ]]; then
       DESCRIPS+=("$("${BIN[grep]}" Description= "${UNITPATH}" | "${BIN[cut]}" -d= -f2)")
-      if [[ ${UNITFILE} =~ dm.service ]] && ${PLYMOUTH}; then
+      if [[ ${UNITFILE} =~ dm.service ]] && ${PLYMOUTH} && [[ ! ${UNITFILE} =~ ^xdm ]]; then
         UNITFILE="${UNITFILE/.service/-plymouth.service}"
         UNITPATH="${OSCHROOT}/${SDUFPATH}/${UNITFILE}"
       fi
@@ -2645,13 +2646,13 @@ function WIZARD_MODE {
   CONFIGURE_SYSTEMD_SERVICE_START_TIMEOUT && \
   CONFIGURE_SYSTEMD_SERVICE_STOP_TIMEOUT && \
   CONFIGURE_SYSTEMD_RESOLVED && \
+  ENABLE_SYSTEMD_SERVICES && \
   CONFIGURE_DEFAULT_EDITOR && \
   CONFIGURE_VIDEO_ACCELERATION && \
   CREATE_NEW_USERS && \
   SET_USER_PASSWORD && \
   SET_USER_GROUPS && \
-  SET_USER_SHELL && \
-  ENABLE_SYSTEMD_SERVICES
+  SET_USER_SHELL
 }
 
 while true; do
