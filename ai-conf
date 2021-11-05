@@ -1340,13 +1340,13 @@ function CONFIGURE_OPENSSH_LISTEN {
   local SELECTED SSHPORTS SSHADDRS OPENPORT OPRT_TXT ADDRESS LIPA_TXT
   local IP4_ADDR=false IP6_ADDR=false
 
-  LBL_STRS=('Ports' 'Addresses')
+  LBL_STRS=('Addresses' 'Ports')
   IFS=':' read -ra DEFAULTS <<< "$(GET_SSHD_LISTEN_INFO | "${BIN[sed]}" 's/.* //g')"
 
   DIALOG_FORM "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 'LBL_STRS' 'DEFAULTS' || return 1
   SELECTED="$(</tmp/selection)"
-  SSHPORTS="${SELECTED%%$'\n'*}"
-  SSHADDRS="${SELECTED##*$'\n'}"
+  SSHADDRS="${SELECTED%%$'\n'*}"
+  SSHPORTS="${SELECTED##*$'\n'}"
 
   if [[ -n ${SSHPORTS} ]]; then
     for OPENPORT in ${SSHPORTS}; do
