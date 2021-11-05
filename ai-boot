@@ -786,7 +786,7 @@ function GENERATE_BOOT_STANZA_SYSLINUX {
     if [[ ${ADDLKCLP} =~ quiet ]]; then
       BTSTANZA+="\tLABEL\t${OSR_OSID}-verbose\n"
       STNZATTL="Verbose startup"
-      [[ -z ${PLMTHKCL} ]] && STNZATTL="${STNZATTL#V/No splash and v}"
+      [[ -z ${PLMTHKCL} ]] && STNZATTL="${STNZATTL/V/No splash and v}"
       BTSTANZA+="\tMENU LABEL ${STNZATTL}\n"
       BTSTANZA+="\tLINUX\t${KRN_IMGS[${LC}]}\n"
       BTSTANZA+="\tAPPEND\t${RFS_SPEC}${RFS_FLGS+ }${RFS_FLGS} ${ADDLKCLP/*( )quiet*( )/}${LUKSKCLP+ }${LUKSKCLP}\n"
@@ -1133,7 +1133,7 @@ function INSTALL_REFIND {
 }
 
 function INSTALL_SYSLINUX {
-  local LDR_ARCH LDR_PATH LDR_ULIB LOCATION
+  local LDR_ARCH LDR_PATH LDR_ULIB LOCATION OUTPUTFN
   if [[ ${VALIDEFI+y} == y ]]; then
     LDR_PATH="${LDR_MTPT}/EFI/syslinux"
     CHOOSE_EFI_STANDARD_OR_DEFAULT "${LDR_PATH}"
@@ -1150,20 +1150,22 @@ function INSTALL_SYSLINUX {
   # ia32 files over.  It expects c32 files to be in /EFI/syslinux and
   # there's no difference in name between the two architectures.
 
-  if [[ -e ${LDR_ULIB}/efi${SYSTEM[fw-bits]} ]]; then
+  if [[ ${VALIDEFI+y} == y ]] && [[ -e ${LDR_ULIB}/efi${SYSTEM[fw-bits]} ]]; then
     [[ ${SYSTEM[fw-bits]} -eq 64 ]] && LDR_ARCH='x64' || LDR_ARCH='ia32'
     USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_ULIB}/efi${SYSTEM[fw-bits]}/"*.c32 "${LDR_PATH}/"
-    [[ ${LOCATION} =~ /EFI/Boot ]] && OUTPUTFN="boot${LDR_ARCH}.efi" || unset OUTPUTFN
+    if [[ ${LOCATION} =~ /EFI/Boot ]]; then
+      OUTPUTFN="boot${LDR_ARCH}.efi"
+    else
+      unset OUTPUTFN
+      INSTALL_EFI_BOOT_ENTRY syslinux
+    fi
     USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_ULIB}/efi${SYSTEM[fw-bits]}/syslinux.efi" "${LOCATION}/${OUTPUTFN}"
-  fi
-
-  if [[ ${LOCATION} =~ /EFI ]]; then
     USE_PRIVILEGE "${BIN[cp]}" -np "${IMG_PATH}/syslinux/syslinux.cfg" "${LDR_PATH}/syslinux.cfg"
-    [[ ${LOCATION} =~ /EFI/Boot ]] || INSTALL_EFI_BOOT_ENTRY syslinux
-  else
-   USE_PRIVILEGE "${BIN[sfdisk]}" -A "${LDR_DISK}" "${LDR_PNUM}"
-   USE_PRIVILEGE "${OSCHROOT}/usr/bin/extlinux" --install "${LDR_PATH}/syslinux"
-   USE_PRIVILEGE "${BIN[dd]}" bs=440 count=1 conv=notrunc if="${LDR_ULIB}/bios/mbr.bin" of="${LDR_DISK}"
+  elif [[ ${VALIDEFI+y} != y ]]; then
+    USE_PRIVILEGE "${BIN[cp]}" -up "${LDR_ULIB}/bios/"*.c32 "${LDR_PATH}"
+    USE_PRIVILEGE "${BIN[sfdisk]}" -A "${LDR_DISK}" "${LDR_PNUM}"
+    USE_PRIVILEGE "${OSCHROOT}/usr/bin/extlinux" --install "${LDR_PATH}"
+    USE_PRIVILEGE "${BIN[dd]}" bs=440 count=1 conv=notrunc if="${LDR_ULIB}/bios/mbr.bin" of="${LDR_DISK}"
   fi
 }
 
