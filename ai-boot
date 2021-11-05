@@ -1139,8 +1139,8 @@ function INSTALL_SYSLINUX {
     CHOOSE_EFI_STANDARD_OR_DEFAULT "${LDR_PATH}"
     LOCATION="$(</tmp/selection)"
   else
-    LDR_PATH="${LDR_MTPT}${LDR_BPTH}/syslinux"
-    LOCATION="${LDR_MTPT}${LDR_BPTH}/syslinux"
+    LDR_PATH="${LDR_MTPT}${LDR_BPTH%/}/syslinux"
+    LOCATION="${LDR_MTPT}${LDR_BPTH%/}/syslinux"
   fi
   LDR_ULIB="${OSCHROOT}/usr/lib/syslinux"
 
