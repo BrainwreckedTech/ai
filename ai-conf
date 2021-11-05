@@ -361,7 +361,7 @@ function GET_SSHD_LISTEN_INFO {
   done
 
   if [[ -z ${LISTENS} ]] && [[ -s ${OSCHROOT}/etc/hosts ]]; then
-    LISTENS="$("${BIN[grep]}" -s "\s$(<"${OSCHROOT}/etc/hostname")\." "${OSCHROOT}/etc/hosts"):22"
+    LISTENS="$("${BIN[grep]}" -s "\s$(<"${OSCHROOT}/etc/hostname")\." "${OSCHROOT}/etc/hosts" | "${BIN[cut]}" -d\  -f1):22"
   fi
 
   [[ -z ${LISTENS} ]] && LISTENS='0.0.0.0:22'
@@ -1341,7 +1341,7 @@ function CONFIGURE_OPENSSH_LISTEN {
   local IP4_ADDR=false IP6_ADDR=false
 
   LBL_STRS=('Ports' 'Addresses')
-  IFS=':' read -ra DEFAULTS <<< "$(GET_SSHD_LISTEN_INFO | tr ':' ' ')"
+  IFS=':' read -ra DEFAULTS <<< "$(GET_SSHD_LISTEN_INFO | "${BIN[sed]}" 's/.* //g' | tr ':' ' ')"
 
   DIALOG_FORM "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 'LBL_STRS' 'DEFAULTS' || return 1
   SELECTED="$(</tmp/selection)"
