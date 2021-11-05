@@ -1144,6 +1144,7 @@ function PACKAGESEL_DESKTOP {
       DESKTOP="OpenBox"
       PACKAGES[demndtry]+='openbox'
       [[ ${INTENTS[guitk]} == gtk ]] && VIRT_GRP+=(obconf) || VIRT_GRP+=(obconf-qt)
+      AUR_PKGS=(obmenu-generator)
       ;;
     *pekwm*)
       DESKTOP='PekWM'
