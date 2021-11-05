@@ -1583,8 +1583,9 @@ function CONFIGURE_POLICYKIT_ROOTPW {
 		});
 		ENDOFSCRIPT"
   else
-    USE_PRIVILEGE "${BIN[rm]}" "${CFG_FILE}"
+    [[ -e ${CFG_FILE} ]] && USE_PRIVILEGE "${BIN[rm]}" "${CFG_FILE}"
   fi
+  return 0
 }
 
 function CONFIGURE_PLYMOUTH {
