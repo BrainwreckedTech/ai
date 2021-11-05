@@ -499,7 +499,7 @@ function CONFIGURE_SYSLINUX {
           "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' || return 1
         ;;
       range)
-        DIALOG_RANGE "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" 0 60 2 || return 1
+        DIALOG_RANGE "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" 0 600 20 || return 1
         ;;
     esac
     SELECTED="$(</tmp/selection)"
