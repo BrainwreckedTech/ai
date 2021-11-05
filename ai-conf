@@ -1662,7 +1662,7 @@ function CONFIGURE_SMARTD_DEVICESCAN {
   [[ ${PREV_CFG} =~ '-n standby' ]] && SELSTATE+=(on) || SELSTATE+=(off)
   [[ ${PREV_CFG} =~ '-s' ]] && SELSTATE+=(on) || SELSTATE+=(off)
 
-  DIALOG_MULTI_SELECT "${BACK_TTL}" "${MAIN_TTL}" 'hidetags' \
+  DIALOG_MULTI_SELECT "${BAKTITLE}" "${MAIN_TTL}" 'hidetags' \
     "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS' 'SELSTATE' || return 1
   SELECTED="$(</tmp/selection)"
 
