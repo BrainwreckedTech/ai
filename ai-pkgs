@@ -2476,7 +2476,7 @@ function PACKAGESEL_ADDITIONAL {
     SUGGESTS+=("${PACKAGE}")
     ADDLSELS+=("${SELSTATE}")
     DESCRIPS+=("${DESCRIBE}")
-  done <<< "$(sed 's/\t\t*/\t/g' packages)"
+  done <<< "$(sed 's/\t\t*/\t/g' "${0%/*}packages")"
 }
 
 function WIZARD_MODE {
