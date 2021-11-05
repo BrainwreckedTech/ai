@@ -473,7 +473,7 @@ function CONFIGURE_SYSLINUX {
     case "${CFG_OPTN#*:}" in
       bool)
         [[ ${CFG_OPTN%:*} == PROMPT ]] && BOOLTRUE=0 && BOOLNOPE=1
-        [[ ${CFG_OPTN%:*} == UI ]] && BOOLTRUE='vesamenu' && BOOLNOPE='menu'
+        [[ ${CFG_OPTN%:*} == UI ]] && BOOLTRUE='vesamenu32.c32' && BOOLNOPE='menu.c32'
         DIALOG_YESNO "${TITLEBAR}" "${CFG_OPTN%:*}" "${HELP_MSG}" \
           && echo "${BOOLTRUE}" > /tmp/selection || echo "${BOOLNOPE}" > /tmp/selection
         ;;
