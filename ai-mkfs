@@ -13,7 +13,7 @@ declare DEV_NAME PT_NAMES
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in column id mkdir mount partprobe rev rmdir umount; do
+for CMD in column id mount partprobe rev rmdir umount; do
     BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
 
