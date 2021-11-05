@@ -361,7 +361,7 @@ function GET_SSHD_LISTEN_INFO {
   done
 
   if [[ -z ${LISTENS} ]] && [[ -s ${OSCHROOT}/etc/hosts ]]; then
-    LISTENS="$("${BIN[grep]}" -s "\s$(<"${OSCHROOT}/etc/hostname")\." "${OSCHROOT}/etc/hosts" | "${BIN[cut]}" -d\  -f1):22"
+    LISTENS="$("${BIN[grep]}" -s "\s$(<"${OSCHROOT}/etc/hostname")\." "${OSCHROOT}/etc/hosts" | "${BIN[sed]}" 's/\s.*//g'):22"
   fi
 
   [[ -z ${LISTENS} ]] && LISTENS='0.0.0.0:22'
