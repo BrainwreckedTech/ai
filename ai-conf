@@ -1341,7 +1341,7 @@ function CONFIGURE_OPENSSH_LISTEN {
   local IP4_ADDR=false IP6_ADDR=false
 
   LBL_STRS=('Ports' 'Addresses')
-  IFS=':' read -ra DEFAULTS <<< "$(GET_SSHD_LISTEN_INFO | "${BIN[sed]}" 's/.* //g' | tr ':' ' ')"
+  IFS=':' read -ra DEFAULTS <<< "$(GET_SSHD_LISTEN_INFO | "${BIN[sed]}" 's/.* //g')"
 
   DIALOG_FORM "${TITLEBAR}" "${BAKTITLE}" "${HELP_MSG}" 'LBL_STRS' 'DEFAULTS' || return 1
   SELECTED="$(</tmp/selection)"
