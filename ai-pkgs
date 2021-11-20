@@ -11,9 +11,14 @@ declare -a BROWSERS_BLINK BROWSERS_GECKO BROWSERS_WBKT2GTK BROWSERS_QTWEBKIT
 # Overly-cautious verification of required binaries
 ################################################################################
 
-for CMD in curl date nmap pacman pacstrap reflector stat xargs; do
+for CMD in curl date nmap pacman pacstrap stat xargs; do
     BIN["${CMD}"]="$(GET_COMMAND "${CMD}")" || ERR_LIST+="CRIT: Couldn't find ${CMD}\n"
 done
+
+# Some versions of Arch do not have reflector
+if "${BIN[pacman]}" -Si reflector > /dev/null 2>&1; then
+    BIN[reflector]="$(GET_COMMAND reflector)" || ERR_LIST+="CRIT: Couldn't find reflector\n"
+fi
 
 FILE[pci.ids]="$("${BIN[find]}" /usr/share -name 'pci.ids' 2> /dev/null)"
 [[ -z ${FILE[pci.ids]} ]] && ERR_LIST+="CRIT: Couldn't find pci.ids under /usr/share\n"
@@ -553,7 +558,7 @@ function UPDATE_PACMAN_MIRRORLIST {
     COUNTRY="$("${BIN[curl]}" -s "${GEOIPURL}" | "${BIN[grep]}" countryname | ${BIN[sed]} 's/.*<countryname>\(.*\)<\/countryname>.*/\1/g')"
     "${BIN[printf]}" " %s\n" "${COUNTRY}"
     "${BIN[printf]}" "\033[1;34m::\033[97m Determining Best Mirrors...\033[0m\n"
-    "${BIN[sudo]}" "${BIN[reflector]}" -p https -l 10 -f 5 -c "${COUNTRY}" --sort rate --save /etc/pacman.d/mirrorlist
+    [[ -n ${BIN[reflector]} ]] && "${BIN[sudo]}" "${BIN[reflector]}" -p https -l 10 -f 5 -c "${COUNTRY}" --sort rate --save /etc/pacman.d/mirrorlist
     "${BIN[grep]}" '^Server' /etc/pacman.d/mirrorlist | "${BIN[sed]}" 's/\(.*\)/ \1/g'
   fi
   "${BIN[sudo]}" "${BIN[pacman]}" -Sy
