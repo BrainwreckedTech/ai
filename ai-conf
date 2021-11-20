@@ -2025,8 +2025,9 @@ function CONFIGURE_VIDEO_ACCELERATION {
 		[ -n \\\$vdn ] && export VDPAU_DRIVER=\\\$vdn
 		ENDOFSCRIPT"
   else
-    USE_PRIVILEGE "${BIN[rm]}" "${CFG_FILE}"
+    [[ -e "${CFG_FILE}" ]] && USE_PRIVILEGE "${BIN[rm]}" "${CFG_FILE}"
   fi
+  return 0
 }
 
 function CREATE_NEW_USERS {
