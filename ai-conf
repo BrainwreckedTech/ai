@@ -2079,7 +2079,7 @@ function ENABLE_SYSTEMD_SERVICES {
             gdm.service gitea.service haveged.service httpd.service
             iptables.service lightdm.service lm_sensors.service lxdm.service
             mariadb.service minidlna.service murmur.service
-            NetworkManager.service NetworkManger-wait-online.service
+            NetworkManager.service NetworkManager-wait-online.service
             nfs-client.target nfs-server.service nginx.service nmb.service
             ntpd.service paccache.timer php-fpm.service pkgfile-update.timer
             postfix.service postgresql.service qemu-ga.service redis.service
