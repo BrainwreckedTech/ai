@@ -1007,7 +1007,7 @@ function CONFIGURE_MKINITCPIO_MODULES {
   [[ ${PREV_CFG} == '[none]' ]] && unset PREV_CFG
 
   SELECTED='-'
-  until [[ ${SELECTED} =~ ^[a-zA-Z0-9_' ']+$ ]]; do
+  until [[ ${SELECTED} =~ ^[a-zA-Z0-9_' ']+$ ]] || [[ -z ${SELECTED} ]]; do
     if [[ ${SELECTED} != '-' ]]; then
       DIALOG_MSGBOX "${TITLEBAR}" "${BAKTITLE}" "Invalid characters in module list."
     fi
