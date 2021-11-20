@@ -2584,8 +2584,11 @@ function REVIEW_MODE {
              'Review all packages'
              'Finalize')
 
+  [[ -n ${OSCHROOT} ]] && PKG_MNGR="${BIN[pacstrap]}" && PM_ARGS="${OSCHROOT}"
+  [[ -z ${OSCHROOT} ]] && PKG_MNGR="${BIN[pacman]}" && PM_ARGS="-Syu"
+
   "${BIN[printf]}" '#!/bin/sh\n%s %s %s --needed base %s\n' \
-    "${BIN[sudo]}" "${BIN[pacstrap]}" "${OSCHROOT}" "${PACKAGES[*]}" > ~/ainstall.sh
+    "${BIN[sudo]}" "${PKG_MNGR}" "${PM_ARGS}" "${PACKAGES[*]}" > ~/ainstall.sh
 
   while true; do
     DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'hidetags' '' \
