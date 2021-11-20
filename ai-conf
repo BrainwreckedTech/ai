@@ -422,7 +422,7 @@ function INTERPRET_SUDO_CONFIG {
   [[ ${SUDO_CFG} =~ passprompt ]] && MEANING+='custom prompt set, '
 
   if [[ ${SUDO_CFG} =~ passwd_timeout ]]; then
-    TIMEOUT="$("${BIN[grep]}" passwd_timeout <<< "${SUDO_CFG}" | "${BIN[cut]}" -d= -f2)"
+    TIMEOUT="$("${BIN[grep]}" passwd_timeout <<< "${SUDO_CFG}" | ${BIN[tail]} -1 | "${BIN[cut]}" -d= -f2)"
     if [[ ${TIMEOUT} == 0 ]]; then
       MEANING+='no password timeout, '
     else
