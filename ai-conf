@@ -352,6 +352,8 @@ function GET_SSHD_LISTEN_INFO {
   OPENPRTS="$("${BIN[grep]}" -s '^\s*Port' "${CFG_FILE}" | "${BIN[sed]}" 's/.*[ \t]//g' | "${BIN[sort]}" -n | "${BIN[paste]}" -d, -s)"
   LSTNADRS="$("${BIN[grep]}" -s '^\s*ListenAddress' "${CFG_FILE}" | "${BIN[sed]}" 's/.*[ \t]//g' | "${BIN[sort]}" -n | "${BIN[paste]}" -d, -s)"
 
+  [[ -z ${OPENPRTS} ]] && OPENPRTS='22'
+
   for ADDRESS in ${LSTNADRS}; do
     if [[ ${ADDRESS} =~ [0-9af]:[0-9]{2,5}$ ]]; then
       LISTENS+="${ADDRESS} "
@@ -361,10 +363,10 @@ function GET_SSHD_LISTEN_INFO {
   done
 
   if [[ -z ${LISTENS} ]] && [[ -s ${OSCHROOT}/etc/hosts ]]; then
-    LISTENS="$("${BIN[grep]}" -s "\s$(<"${OSCHROOT}/etc/hostname")\." "${OSCHROOT}/etc/hosts" | "${BIN[sed]}" 's/\s.*//g'):22"
+    LISTENS="$("${BIN[grep]}" -s "\s$(<"${OSCHROOT}/etc/hostname")\." "${OSCHROOT}/etc/hosts" | "${BIN[sed]}" 's/\s.*//g'):${OPENPRTS}"
   fi
 
-  [[ -z ${LISTENS} ]] && LISTENS='0.0.0.0:22'
+  [[ -z ${LISTENS} ]] && LISTENS="0.0.0.0:${OPENPRTS}"
 
   echo "Service ${SVCSTATE}, listening on ${LISTENS% }"
 }
