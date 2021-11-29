@@ -2607,6 +2607,7 @@ function REVIEW_MODE {
         echo "${PACKAGES[*]}" | "${BIN[xargs]}" -n1 | "${BIN[sort]}" | "${BIN[xargs]}" | "${BIN[fold]}" -sw 72 > /tmp/debug
         ;;
       finalize)
+        GET_PRIVILEGE
         until sh ~/ainstall.sh; do
           "${BIN[printf]}" 'Installation failed.  Retry? [Y/n] '
           read -rn1 TRYAGAIN
