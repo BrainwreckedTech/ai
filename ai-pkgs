@@ -553,7 +553,7 @@ function UPDATE_PACMAN_MIRRORLIST {
 
   GET_PRIVILEGE || exit 1
   # Avoid repeated attempts to update the mirrorlist -- once an hour is good enough
-  if [[ $(($("${BIN[date]}" +%s)-$("${BIN[stat]}" -c %Y "${MRRRLIST}"))) -gt 3600 ]]; then
+  if [[ $(($("${BIN[date]}" +%s)-$("${BIN[stat]}" -c %Y "${MRRRLIST}"))) -gt 9000 ]]; then
     "${BIN[printf]}" "\033[1;34m::\033[97m Geolocating county...\033[0m\n"
     COUNTRY="$("${BIN[curl]}" -s "${GEOIPURL}" | "${BIN[grep]}" countryname | ${BIN[sed]} 's/.*<countryname>\(.*\)<\/countryname>.*/\1/g')"
     "${BIN[printf]}" " %s\n" "${COUNTRY}"
