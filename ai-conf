@@ -2326,7 +2326,7 @@ function SET_USER_SHELL {
     if DIALOG_SINGLE_SELECT "${TITLEBAR}" "${BAKTITLE}" 'showtags' \
       "${CURSHELL}" "${HELP_MSG}" 'SUGGESTS' 'DESCRIPS'; then
       SELECTED="$(</tmp/selection)"
-      USE_PRIVILEGE "${BIN[sed]}" -i "s|:${CURSHELL}$|:${SELECTED}|g" "${OSCHROOT}/etc/passwd"
+      USE_PRIVILEGE "${BIN[sed]}" -i "s|\(${LOGINAME}:.*\):${CURSHELL}$|\1:${SELECTED}|g" "${OSCHROOT}/etc/passwd"
     fi
   done
 }
