@@ -619,8 +619,8 @@ function INTENTS_DESKTOP {
   INTENTS[desktop]="$(</tmp/selection)"
 
   case "${INTENTS[desktop]}" in
-    budgie|cinnamon|gnome|lxde|mate|xfce) INTENTS[guitk]+='gtk';;
-                      deepin|lxqt|plasma) INTENTS[guitk]+='qt';;
+    budgie|cinnamon|deepin|gnome|lxde|mate|xfce) INTENTS[guitk]+='gtk';;
+                                    lxqt|plasma) INTENTS[guitk]+='qt';;
   esac
   return 0
 }
