@@ -2304,7 +2304,7 @@ function PACKAGESEL_XORG_GPU {
           HELP_MSG='You card is supported by the newer AMDGPU drivers, but\n'
           HELP_MSG+='support is considered "experimental".  Despite the label,\n'
           HELP_MSG+="it should be good enough for moderate non-critical use."
-          DESCRIPS=('Legacy ATI driver' 'Modern AMDGPU driver')
+          DESCRIPS=('Modern AMDGPU driver' 'Legacy ATI driver')
           DIALOG_SINGLE_SELECT "${TITLEBAR}" "Xorg Driver Selection" 'showtags' \
             "${NOMINEES[0]}" "${HELP_MSG}" 'NOMINEES' 'DESCRIPS'
           XORG_PKG="$(< /tmp/selection)"
