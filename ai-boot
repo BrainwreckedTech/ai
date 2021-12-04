@@ -1014,7 +1014,7 @@ function INSTALL_EFI_TOOLS {
   fi
   if [[ -e ${OSCHROOT}/usr/share/memtest86-efi ]]; then
     USE_PRIVILEGE "${BIN[mkdir]}" -p "${LDR_MTPT}/EFI/memtest86"
-    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/memtest86-efi/"*.* "${LDR_MTPT}/EFI/tools/"
+    USE_PRIVILEGE "${BIN[cp]}" -up "${OSCHROOT}/usr/share/memtest86-efi/"*.* "${LDR_MTPT}/EFI/memtest86/"
   fi
 }
 
