@@ -10,6 +10,7 @@ exsystem	Extra System Packages	cronie				off	Cron daemon
 exsystem	Extra System Packages	gpm				on	Mouse server for consoles and xterm
 exsystem	Extra System Packages	plocate				on	Faster locate
 exsystem	Extra System Packages	openssh				on	OpenSSH client and server
+exsystem	Extra System Packages	fail2ban				on	Bans IPs after too many failed logins
 exsystem	Extra System Packages	polkit				on	Privilege toolkit
 exsystem	Extra System Packages	sudo				on	Allow users to run commands as root
 compress	Compression Utilities	arj				off	Lesser-known ARJ compression
