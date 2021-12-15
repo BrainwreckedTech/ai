@@ -876,8 +876,8 @@ function CONFIGURE_IPTABLES {
 
   for PORTNMBR in ${DENYSLCT}; do
     PRTDSCRP=$("${BIN[sed]}" "s/.* ${PORTNMBR}_\([a-z-]*\).*/\1/g" <<< "${CMBNPRTS[@]}")
-    NEWIPTBL+="-A OUTPUT -p tcp -m tcp --dport ${PORTNMBR} -j DROP -m comment --comment \"${PRTDSCRP}:tcp\""$'\n'
-    NEWIPTBL+="-A OUTPUT -p udp -m udp --dport ${PORTNMBR} -j DROP -m comment --comment \"${PRTDSCRP}:udp\""$'\n'
+    NEWIPTBL+="-A TCP -p tcp -m tcp --dport ${PORTNMBR} -j DROP -m comment --comment \"${PRTDSCRP}:tcp\""$'\n'
+    NEWIPTBL+="-A UDP -p udp -m udp --dport ${PORTNMBR} -j DROP -m comment --comment \"${PRTDSCRP}:udp\""$'\n'
   done
 
   [[ -n ${DENYSLCT} ]] && NEWIPTBL+=$'\n'
